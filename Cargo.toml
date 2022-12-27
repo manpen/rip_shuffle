@@ -1,0 +1,19 @@
+[package]
+name = "rip-shuffle"
+description = "Fast sequential and parallel inplace shuffling algoritms"
+version = "0.1.0"
+edition = "2021"
+authors = ["Manuel Penschuck <rip-shuffle@algorithm.engineering>"]
+
+[features]
+default = ["unsafe_algos", "prefetch"]
+unsafe_algos = []
+prefetch = []
+
+[dependencies]
+rand="0.8"
+rayon="1.6"
+arrayvec="0.7"
+
+[dev-dependencies]
+rand_pcg="0.3"
