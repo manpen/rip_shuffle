@@ -12,7 +12,7 @@ pub fn fisher_yates<R: Rng, T>(rng: &mut R, data: &mut [T]) {
 }
 
 pub fn fisher_yates_u32<R: Rng, T>(rng: &mut R, data: &mut [T]) {
-    fisher_yates_impl::<DEFAULT_PREFETCH_WIDTH, R, T, _>(
+    fisher_yates_impl::<R, T, _, DEFAULT_PREFETCH_WIDTH>(
         rng,
         |rng: &mut R, ub: usize| uniform_index::impl_u32::gen_index(rng, ub as u32) as usize,
         data,
@@ -20,32 +20,32 @@ pub fn fisher_yates_u32<R: Rng, T>(rng: &mut R, data: &mut [T]) {
 }
 
 pub fn fisher_yates_u64<R: Rng, T>(rng: &mut R, data: &mut [T]) {
-    fisher_yates_impl::<DEFAULT_PREFETCH_WIDTH, R, T, _>(
+    fisher_yates_impl::<R, T, _, DEFAULT_PREFETCH_WIDTH>(
         rng,
         |rng: &mut R, ub: usize| uniform_index::impl_u64::gen_index(rng, ub as u64) as usize,
         data,
     );
 }
 
-fn fisher_yates_impl<const N: usize, R: Rng, T, D: Fn(&mut R, usize) -> usize>(
+fn fisher_yates_impl<R: Rng, T, D: Fn(&mut R, usize) -> usize, const PREFETCH_WIDTH: usize>(
     rng: &mut R,
     distr: D,
     data: &mut [T],
 ) {
     let n = data.len();
 
-    if N == 0 || n <= 2 * N {
+    if PREFETCH_WIDTH == 0 || n <= 2 * PREFETCH_WIDTH {
         return super::naive::fisher_yates(rng, data);
     }
 
     // this is an ultra-compact ring buffer
     let mut enqueue = {
-        let mut ring_buf = [0usize; N];
+        let mut ring_buf = [0usize; PREFETCH_WIDTH];
         let mut ring_buf_idx = 0;
 
         move |new_val| -> usize {
             let old = std::mem::replace(&mut ring_buf[ring_buf_idx], new_val);
-            ring_buf_idx = (ring_buf_idx + 1) % N;
+            ring_buf_idx = (ring_buf_idx + 1) % PREFETCH_WIDTH;
             old
         }
     };
@@ -58,16 +58,16 @@ fn fisher_yates_impl<const N: usize, R: Rng, T, D: Fn(&mut R, usize) -> usize>(
         new_idx
     };
 
-    for i in (n - N..n).rev() {
+    for i in (n - PREFETCH_WIDTH..n).rev() {
         enqueue(draw_and_fetch(data, i + 1));
     }
 
-    for i in (N + 1..n).rev() {
-        let j = enqueue(draw_and_fetch(data, i - N + 1));
+    for i in (PREFETCH_WIDTH + 1..n).rev() {
+        let j = enqueue(draw_and_fetch(data, i - PREFETCH_WIDTH + 1));
         data.swap(i, j);
     }
 
-    for i in (1..N + 1).rev() {
+    for i in (1..PREFETCH_WIDTH + 1).rev() {
         let j = enqueue(0);
         data.swap(i, j);
     }
