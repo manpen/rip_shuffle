@@ -10,5 +10,7 @@ pub mod prelude {
     pub use super::fisher_yates::fisher_yates;
 }
 
+mod blocked;
+
 #[cfg(test)]
 mod statistical_tests;
