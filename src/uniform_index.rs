@@ -25,11 +25,11 @@ pub const U32_MAX_UPPER_BOUND: u32 = u32::MAX / 256;
 ///   assert!(rand < i);
 /// }
 /// ```
-pub fn gen_index(rng: &mut impl Rng, ub: usize) -> usize {
-    if ub <= U32_MAX_UPPER_BOUND as usize {
-        impl_u32::gen_index(rng, ub as u32) as usize
+pub fn gen_index(rng: &mut impl Rng, exclusive_ub: usize) -> usize {
+    if exclusive_ub <= U32_MAX_UPPER_BOUND as usize {
+        impl_u32::gen_index(rng, exclusive_ub as u32) as usize
     } else {
-        impl_u64::gen_index(rng, ub as u64) as usize
+        impl_u64::gen_index(rng, exclusive_ub as u64) as usize
     }
 }
 
@@ -39,22 +39,22 @@ macro_rules! impl_gen_index {
             use super::*;
 
             #[inline]
-            pub fn gen_index(rng: &mut impl Rng, ub: $t) -> $t {
+            pub fn gen_index(rng: &mut impl Rng, exclusive_ub: $t) -> $t {
                 let initial = rng.gen();
-                gen_index_impl(rng, initial, ub)
+                gen_index_impl(rng, initial, exclusive_ub)
             }
 
             #[inline]
-            pub fn gen_index_impl(rng: &mut impl Rng, initial: $t, ub: $t) -> $t {
-                debug_assert!(ub != 0);
+            pub fn gen_index_impl(rng: &mut impl Rng, initial: $t, exclusive_ub: $t) -> $t {
+                debug_assert!(exclusive_ub != 0);
 
-                let (lo, hi) = initial.widening_mul(ub);
+                let (lo, hi) = initial.widening_mul(exclusive_ub);
 
-                if lo >= ub {
+                if lo >= exclusive_ub {
                     return hi;
                 }
 
-                let t = ub.wrapping_neg() % ub;
+                let t = exclusive_ub.wrapping_neg() % exclusive_ub;
                 let mut lo = lo;
                 let mut hi = hi;
 
@@ -64,7 +64,7 @@ macro_rules! impl_gen_index {
                     }
 
                     let rand: $t = rng.gen();
-                    (lo, hi) = rand.widening_mul(ub);
+                    (lo, hi) = rand.widening_mul(exclusive_ub);
                 }
             }
         }

@@ -51,6 +51,10 @@ impl<'a, T> Block<'a, T> {
         Self::new_with_num_unprocessed(merged_data, merged_num_unprocessed)
     }
 
+    pub fn set_num_processed(&mut self, num: usize) {
+        self.num_unprocessed = self.len() - num;
+    }
+
     pub fn num_processed(&self) -> usize {
         self.len() - self.num_unprocessed
     }
@@ -84,19 +88,12 @@ impl<'a, T> Block<'a, T> {
     }
 
     pub fn peek_next_element_to_be_processed(&mut self) -> Option<&mut T> {
-        let num_processed = self.num_processed();
-        (num_processed != self.len()).then(|| &mut self.data[num_processed])
+        self.data_unprocessed_mut().first_mut()
     }
 
     pub fn process_element(&mut self) -> Option<&mut T> {
-        if self.num_unprocessed == 0 {
-            return None;
-        }
-
-        let num_processed = self.num_processed();
         self.num_unprocessed -= 1;
-
-        Some(&mut self.data[num_processed])
+        self.peek_next_element_to_be_processed()
     }
 
     pub fn move_stash_to_right_neighbor(&mut self, rhs: &mut Self) {
@@ -144,7 +141,7 @@ mod test {
                 assert_eq!(block.num_processed(), j);
                 assert_eq!(block.num_unprocessed(), i - j);
                 assert_eq!(*block.peek_next_element_to_be_processed().unwrap(), j);
-                assert_eq!(*block.process_element().unwrap(), j);
+                assert_eq!(block.process_element().is_some(), j + 1 < i);
             }
 
             assert!(block.is_fully_processed());
@@ -166,7 +163,8 @@ mod test {
             let mut block = Block::new(&mut data);
 
             for j in 0..i {
-                *block.process_element().unwrap() = j + 1;
+                *block.peek_next_element_to_be_processed().unwrap() = j + 1;
+                block.process_element();
 
                 // data
                 assert_eq!(Vec::from(block.data()), ref_vec(i, j));

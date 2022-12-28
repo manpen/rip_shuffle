@@ -57,7 +57,8 @@ mod test {
 
                 for (i, n) in [n0, n1, n2, n3].into_iter().enumerate() {
                     for _ in 0..n {
-                        *blocks[i].process_element().unwrap() = 1;
+                        *blocks[i].peek_next_element_to_be_processed().unwrap() = 1;
+                        blocks[i].process_element();
                     }
                 }
 
