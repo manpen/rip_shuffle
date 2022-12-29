@@ -3,28 +3,32 @@ use super::*;
 
 pub struct Block<'a, T> {
     data: &'a mut [T],
-    num_unprocessed: usize,
+    num_processed: usize,
 }
 
 impl<'a, T> Default for Block<'a, T> {
     fn default() -> Self {
         Self {
             data: &mut [],
-            num_unprocessed: 0,
+            num_processed: 0,
         }
     }
 }
 
 impl<'a, T> Block<'a, T> {
     pub fn new(data: &'a mut [T]) -> Self {
-        Self::new_with_num_unprocessed(data, data.len())
+        Self {
+            data,
+            num_processed: 0,
+        }
     }
 
     pub fn new_with_num_unprocessed(data: &'a mut [T], num_unprocessed: usize) -> Self {
         assert!(num_unprocessed <= data.len());
+        let n = data.len();
         Self {
             data,
-            num_unprocessed,
+            num_processed: n - num_unprocessed,
         }
     }
 
@@ -33,7 +37,7 @@ impl<'a, T> Block<'a, T> {
     }
 
     pub fn is_fully_processed(&self) -> bool {
-        self.num_unprocessed == 0
+        self.num_processed == self.len()
     }
 
     pub fn len(&self) -> usize {
@@ -45,22 +49,25 @@ impl<'a, T> Block<'a, T> {
 
         self.move_stash_to_right_neighbor(&mut rhs);
 
-        let merged_num_unprocessed = self.num_unprocessed + rhs.num_unprocessed;
+        let merged_num_processed = self.num_processed + rhs.num_processed;
         let merged_data = self.data.merge_with_right_neighbor(rhs.data);
 
-        Self::new_with_num_unprocessed(merged_data, merged_num_unprocessed)
+        Self {
+            data: merged_data,
+            num_processed: merged_num_processed,
+        }
     }
 
     pub fn set_num_processed(&mut self, num: usize) {
-        self.num_unprocessed = self.len() - num;
+        self.num_processed = num;
     }
 
     pub fn num_processed(&self) -> usize {
-        self.len() - self.num_unprocessed
+        self.num_processed
     }
 
     pub fn num_unprocessed(&self) -> usize {
-        self.num_unprocessed
+        self.len() - self.num_processed
     }
 
     pub fn data(&self) -> &[T] {
@@ -68,11 +75,11 @@ impl<'a, T> Block<'a, T> {
     }
 
     pub fn data_unprocessed(&self) -> &[T] {
-        self.data().suffix(self.num_unprocessed)
+        &self.data()[self.num_processed..]
     }
 
     pub fn data_processed(&self) -> &[T] {
-        self.data().prefix(self.num_processed())
+        self.data().prefix(self.num_processed)
     }
 
     pub fn data_mut(&mut self) -> &mut [T] {
@@ -80,32 +87,32 @@ impl<'a, T> Block<'a, T> {
     }
 
     pub fn data_unprocessed_mut(&mut self) -> &mut [T] {
-        self.data.suffix(self.num_unprocessed)
+        &mut self.data[self.num_processed..]
     }
 
     pub fn data_processed_mut(&mut self) -> &mut [T] {
-        self.data.prefix(self.num_processed())
+        self.data.prefix(self.num_processed)
     }
 
     pub fn peek_next_element_to_be_processed(&mut self) -> Option<&mut T> {
-        self.data_unprocessed_mut().first_mut()
+        self.data.get_mut(self.num_processed)
     }
 
     pub fn process_element(&mut self) -> Option<&mut T> {
-        self.num_unprocessed -= 1;
+        self.num_processed += 1;
         self.peek_next_element_to_be_processed()
     }
 
     pub fn move_stash_to_right_neighbor(&mut self, rhs: &mut Self) {
         assert!(self.is_left_neighbor_of(rhs));
 
-        let num_elements_to_move = self.num_unprocessed.min(rhs.num_processed());
+        let num_elements_to_move = self.num_unprocessed().min(rhs.num_processed());
         self.data_unprocessed_mut()
             .prefix(num_elements_to_move)
             .swap_with_slice(rhs.data_processed_mut().suffix(num_elements_to_move));
 
-        rhs.num_unprocessed += num_elements_to_move;
-        self.num_unprocessed -= num_elements_to_move;
+        rhs.num_processed -= num_elements_to_move;
+        self.num_processed += num_elements_to_move;
     }
 
     pub fn is_left_neighbor_of(&self, rhs: &Self) -> bool {
@@ -215,7 +222,7 @@ mod test {
                     let merged = left_block.merge_with_right_neighbor(right_block);
 
                     assert_eq!(merged.len(), total_len);
-                    assert_eq!(merged.num_unprocessed, left_stash + right_stash);
+                    assert_eq!(merged.num_unprocessed(), left_stash + right_stash);
 
                     assert!(merged.data_processed().iter().all(|x| *x > 0));
                     assert!(merged.data_unprocessed().iter().all(|x| *x == 0));
