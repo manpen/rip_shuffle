@@ -2,54 +2,56 @@ pub trait Slicing: Sized {
     fn prefix(self, n: usize) -> Self;
     fn suffix(self, n: usize) -> Self;
 
+    fn partial_merge_with_right_neighbor(&mut self, rhs: &mut Self, n: usize);
     fn merge_with_right_neighbor(self, rhs: Self) -> Self;
     fn is_left_neighbor_of(&self, rhs: &Self) -> bool;
 }
 
-impl<'a, T> Slicing for &'a [T] {
-    fn prefix(self, n: usize) -> Self {
-        &self[..n]
-    }
+macro_rules! slicing_impl {
+    ($to_ptr : ident, $split_at : ident, $from_raw : path) => {
+        fn prefix(self, n: usize) -> Self {
+            self.$split_at(n).0
+        }
 
-    fn suffix(self, n: usize) -> Self {
-        let total_len = self.len();
-        let start = total_len - n;
-        &self[start..]
-    }
+        fn suffix(self, n: usize) -> Self {
+            let total_len = self.len();
+            let start = total_len - n;
+            self.$split_at(start).1
+        }
 
-    fn merge_with_right_neighbor(self, rhs: Self) -> Self {
-        assert!(self.is_left_neighbor_of(&rhs));
+        fn partial_merge_with_right_neighbor(&mut self, rhs: &mut Self, n: usize) {
+            assert!(self.is_left_neighbor_of(&rhs));
+            assert!(self.len() >= n);
 
-        // it's safe since we asserted that both slices are adjacent
-        unsafe { std::slice::from_raw_parts(self.as_ptr(), self.len() + rhs.len()) }
-    }
+            let left_len = self.len() - n;
+            let right_len = rhs.len() + n;
 
-    fn is_left_neighbor_of(&self, rhs: &Self) -> bool {
-        std::ptr::eq(self.as_ptr_range().end, rhs.as_ptr())
-    }
+            unsafe {
+                let begin = self.$to_ptr();
+                *self = $from_raw(begin, left_len);
+                *rhs = $from_raw(begin.add(left_len), right_len);
+            }
+        }
+
+        fn merge_with_right_neighbor(self, rhs: Self) -> Self {
+            assert!(self.is_left_neighbor_of(&rhs));
+
+            // it's safe since we asserted that both slices are adjacent
+            unsafe { $from_raw(self.$to_ptr(), self.len() + rhs.len()) }
+        }
+
+        fn is_left_neighbor_of(&self, rhs: &Self) -> bool {
+            std::ptr::eq(self.as_ptr_range().end, rhs.as_ptr())
+        }
+    };
 }
 
 impl<'a, T> Slicing for &'a mut [T] {
-    fn prefix(self, n: usize) -> Self {
-        &mut self[..n]
-    }
+    slicing_impl!(as_mut_ptr, split_at_mut, std::slice::from_raw_parts_mut);
+}
 
-    fn suffix(self, n: usize) -> Self {
-        let total_len = self.len();
-        let start = total_len - n;
-        &mut self[start..]
-    }
-
-    fn merge_with_right_neighbor(self, rhs: Self) -> Self {
-        assert!(self.is_left_neighbor_of(&rhs));
-
-        // it's safe since we asserted that both slices are adjacent
-        unsafe { std::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len() + rhs.len()) }
-    }
-
-    fn is_left_neighbor_of(&self, rhs: &Self) -> bool {
-        std::ptr::eq(self.as_ptr_range().end, rhs.as_ptr())
-    }
+impl<'a, T> Slicing for &'a [T] {
+    slicing_impl!(as_ptr, split_at, std::slice::from_raw_parts);
 }
 
 #[cfg(test)]
@@ -111,6 +113,33 @@ mod test {
                 assert_eq!(merged.len(), total_len);
                 assert!(merged.prefix(left_len).iter().all(|x| *x == 0));
                 assert_eq!(merged.iter().sum::<usize>(), total_len - left_len);
+            }
+        }
+    }
+
+    #[test]
+    fn partial_merge_with_right_neighbor() {
+        for total_len in [1, 2, 3, 10] {
+            let data: Vec<_> = (0..total_len).into_iter().collect();
+            for left_len in 0..total_len {
+                let right_len = total_len - left_len;
+
+                for to_move in 0..left_len {
+                    let (mut left, mut right) = data.as_slice().split_at(left_len);
+
+                    left.partial_merge_with_right_neighbor(&mut right, to_move);
+
+                    assert_eq!(left.len(), left_len - to_move);
+                    assert_eq!(right.len(), right_len + to_move);
+
+                    assert!(left.is_left_neighbor_of(&right));
+
+                    assert!(left.iter().enumerate().all(|(i, &x)| i == x));
+                    assert!(right
+                        .iter()
+                        .enumerate()
+                        .all(|(i, &x)| i + left_len - to_move == x));
+                }
             }
         }
     }
@@ -191,6 +220,33 @@ mod test_mut {
                 assert_eq!(merged.len(), total_len);
                 assert!(merged.prefix(left_len).iter().all(|x| *x == 0));
                 assert_eq!(merged.iter().sum::<usize>(), total_len - left_len);
+            }
+        }
+    }
+
+    #[test]
+    fn partial_merge_with_right_neighbor() {
+        for total_len in [1, 2, 3, 10] {
+            let mut data: Vec<_> = (0..total_len).into_iter().collect();
+            for left_len in 0..total_len {
+                let right_len = total_len - left_len;
+
+                for to_move in 0..left_len {
+                    let (mut left, mut right) = data.as_mut_slice().split_at_mut(left_len);
+
+                    left.partial_merge_with_right_neighbor(&mut right, to_move);
+
+                    assert_eq!(left.len(), left_len - to_move);
+                    assert_eq!(right.len(), right_len + to_move);
+
+                    assert!(left.is_left_neighbor_of(&right));
+
+                    assert!(left.iter().enumerate().all(|(i, &x)| i == x));
+                    assert!(right
+                        .iter()
+                        .enumerate()
+                        .all(|(i, &x)| i + left_len - to_move == x));
+                }
             }
         }
     }
