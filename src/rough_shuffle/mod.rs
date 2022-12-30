@@ -10,7 +10,7 @@ mod stashed;
 #[cfg(feature = "unsafe_algos")]
 pub mod with_unsafe_algos;
 
-pub struct Number<const N: usize> {}
+pub struct NumberOfBlocks<const N: usize> {}
 
 pub trait IsPowerOfTwo {
     const N: usize;
@@ -19,7 +19,7 @@ pub trait IsPowerOfTwo {
 
 macro_rules! impl_index_bits_trait {
     ($log_n : expr, $n : expr) => {
-        impl IsPowerOfTwo for Number<$n> {
+        impl IsPowerOfTwo for NumberOfBlocks<$n> {
             const N: usize = $n;
             const LOG2: usize = $log_n;
         }
@@ -42,7 +42,7 @@ impl_index_bits_trait!(10);
 
 pub fn rough_shuffle<R: Rng, T, const N: usize>(rng: &mut R, blocks: &mut Blocks<T, N>)
 where
-    Number<N>: IsPowerOfTwo,
+    NumberOfBlocks<N>: IsPowerOfTwo,
 {
     macro_rules! entry {
         ($log_n : expr) => {{
