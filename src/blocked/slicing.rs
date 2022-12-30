@@ -2,7 +2,9 @@ pub trait Slicing: Sized {
     fn prefix(self, n: usize) -> Self;
     fn suffix(self, n: usize) -> Self;
 
-    fn partial_merge_with_right_neighbor(&mut self, rhs: &mut Self, n: usize);
+    fn give_to_right_neighbor(&mut self, rhs: &mut Self, n: usize);
+    fn give_to_left_neighbor(&mut self, lhs: &mut Self, n: usize);
+
     fn merge_with_right_neighbor(self, rhs: Self) -> Self;
     fn is_left_neighbor_of(&self, rhs: &Self) -> bool;
 }
@@ -19,7 +21,7 @@ macro_rules! slicing_impl {
             self.$split_at(start).1
         }
 
-        fn partial_merge_with_right_neighbor(&mut self, rhs: &mut Self, n: usize) {
+        fn give_to_right_neighbor(&mut self, rhs: &mut Self, n: usize) {
             assert!(self.is_left_neighbor_of(&rhs));
             assert!(self.len() >= n);
 
@@ -30,6 +32,20 @@ macro_rules! slicing_impl {
                 let begin = self.$to_ptr();
                 *self = $from_raw(begin, left_len);
                 *rhs = $from_raw(begin.add(left_len), right_len);
+            }
+        }
+
+        fn give_to_left_neighbor(&mut self, lhs: &mut Self, n: usize) {
+            assert!(lhs.is_left_neighbor_of(&self));
+            assert!(self.len() >= n);
+
+            let left_len = lhs.len() + n;
+            let right_len = self.len() - n;
+
+            unsafe {
+                let begin = lhs.$to_ptr();
+                *lhs = $from_raw(begin, left_len);
+                *self = $from_raw(begin.add(left_len), right_len);
             }
         }
 
@@ -118,7 +134,7 @@ mod test {
     }
 
     #[test]
-    fn partial_merge_with_right_neighbor() {
+    fn give_to_right_neighbor() {
         for total_len in [1, 2, 3, 10] {
             let data: Vec<_> = (0..total_len).into_iter().collect();
             for left_len in 0..total_len {
@@ -127,7 +143,7 @@ mod test {
                 for to_move in 0..left_len {
                     let (mut left, mut right) = data.as_slice().split_at(left_len);
 
-                    left.partial_merge_with_right_neighbor(&mut right, to_move);
+                    left.give_to_right_neighbor(&mut right, to_move);
 
                     assert_eq!(left.len(), left_len - to_move);
                     assert_eq!(right.len(), right_len + to_move);
@@ -135,10 +151,31 @@ mod test {
                     assert!(left.is_left_neighbor_of(&right));
 
                     assert!(left.iter().enumerate().all(|(i, &x)| i == x));
-                    assert!(right
-                        .iter()
-                        .enumerate()
-                        .all(|(i, &x)| i + left_len - to_move == x));
+                    assert!(right.iter().enumerate().all(|(i, &x)| i + left.len() == x));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn give_to_left_neighbor() {
+        for total_len in [1, 2, 3, 10] {
+            let data: Vec<_> = (0..total_len).into_iter().collect();
+            for left_len in 0..total_len {
+                let right_len = total_len - left_len;
+
+                for to_move in 0..right_len {
+                    let (mut left, mut right) = data.as_slice().split_at(left_len);
+
+                    right.give_to_left_neighbor(&mut left, to_move);
+
+                    assert_eq!(left.len(), left_len + to_move);
+                    assert_eq!(right.len(), right_len - to_move);
+
+                    assert!(left.is_left_neighbor_of(&right));
+
+                    assert!(left.iter().enumerate().all(|(i, &x)| i == x));
+                    assert!(right.iter().enumerate().all(|(i, &x)| i + left.len() == x));
                 }
             }
         }
@@ -234,7 +271,7 @@ mod test_mut {
                 for to_move in 0..left_len {
                     let (mut left, mut right) = data.as_mut_slice().split_at_mut(left_len);
 
-                    left.partial_merge_with_right_neighbor(&mut right, to_move);
+                    left.give_to_right_neighbor(&mut right, to_move);
 
                     assert_eq!(left.len(), left_len - to_move);
                     assert_eq!(right.len(), right_len + to_move);
@@ -246,6 +283,30 @@ mod test_mut {
                         .iter()
                         .enumerate()
                         .all(|(i, &x)| i + left_len - to_move == x));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn give_to_left_neighbor() {
+        for total_len in [1, 2, 3, 10] {
+            let mut data: Vec<_> = (0..total_len).into_iter().collect();
+            for left_len in 0..total_len {
+                let right_len = total_len - left_len;
+
+                for to_move in 0..right_len {
+                    let (mut left, mut right) = data.as_mut_slice().split_at_mut(left_len);
+
+                    right.give_to_left_neighbor(&mut left, to_move);
+
+                    assert_eq!(left.len(), left_len + to_move);
+                    assert_eq!(right.len(), right_len - to_move);
+
+                    assert!(left.is_left_neighbor_of(&right));
+
+                    assert!(left.iter().enumerate().all(|(i, &x)| i == x));
+                    assert!(right.iter().enumerate().all(|(i, &x)| i + left.len() == x));
                 }
             }
         }

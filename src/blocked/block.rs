@@ -134,6 +134,39 @@ impl<'a, T> Block<'a, T> {
     pub fn is_left_neighbor_of(&self, rhs: &Self) -> bool {
         self.data.is_left_neighbor_of(&rhs.data)
     }
+
+    pub fn shrink_to_right(&mut self, rhs: &mut Self, num: usize) {
+        assert!(self.is_left_neighbor_of(rhs));
+        assert!(num <= self.num_unprocessed());
+
+        // it holds this_block.num_unprocessed() >= too_long_by >= to_move
+        let to_move = rhs.num_processed().min(num);
+
+        // actual data transfer
+        {
+            let left = self.data_mut().suffix(num).prefix(to_move);
+            let right = rhs.data_processed_mut().suffix(to_move);
+            left.swap_with_slice(right);
+        }
+
+        self.data.give_to_right_neighbor(&mut rhs.data, num);
+    }
+
+    pub fn grow_from_right(&mut self, rhs: &mut Self, num: usize) {
+        assert!(self.is_left_neighbor_of(rhs));
+        assert!(num <= rhs.num_unprocessed());
+
+        rhs.data.give_to_left_neighbor(&mut self.data, num);
+
+        let to_move = rhs.num_processed().min(num);
+
+        // actual data transfer
+        {
+            let left = self.data_mut().suffix(num).prefix(to_move);
+            let right = rhs.data_processed_mut().suffix(to_move);
+            left.swap_with_slice(right);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -141,6 +174,112 @@ mod test {
     use itertools::Itertools;
 
     use super::Block;
+
+    #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+    enum Item {
+        Unint,
+        ProcL,
+        ProcR,
+        Stash,
+    }
+
+    #[test]
+    fn shrink_to_right() {
+        const TOTAL_LEN: usize = 10;
+        let mut data = vec![Item::Unint; TOTAL_LEN];
+        for left_len in 0..TOTAL_LEN {
+            let right_len = TOTAL_LEN - left_len;
+
+            for left_stash_len in 0..left_len {
+                for left_shrinkage in 0..left_stash_len {
+                    for right_stash_len in 0..right_len {
+                        let (mut left, mut right) = {
+                            let (left, right) = data.as_mut_slice().split_at_mut(left_len);
+                            (Block::new(left), Block::new(right))
+                        };
+
+                        left.set_num_processed(left_len - left_stash_len);
+                        right.set_num_processed(right_len - right_stash_len);
+
+                        left.data_processed_mut().fill(Item::ProcL);
+                        left.data_unprocessed_mut().fill(Item::Stash);
+                        right.data_processed_mut().fill(Item::ProcR);
+                        right.data_unprocessed_mut().fill(Item::Stash);
+
+                        left.shrink_to_right(&mut right, left_shrinkage);
+
+                        assert_eq!(left.len(), left_len - left_shrinkage);
+                        assert_eq!(right.len(), right_len + left_shrinkage);
+
+                        assert_eq!(left.num_unprocessed(), left_stash_len - left_shrinkage);
+                        assert_eq!(right.num_unprocessed(), right_stash_len + left_shrinkage);
+
+                        assert!(left.data_processed().iter().all(|&x| x == Item::ProcL));
+                        assert!(right.data_processed().iter().all(|&x| x == Item::ProcR));
+
+                        assert!(left
+                            .data_unprocessed_mut()
+                            .iter()
+                            .all(|&x| x == Item::Stash));
+
+                        assert!(right
+                            .data_unprocessed_mut()
+                            .iter()
+                            .all(|&x| x == Item::Stash));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn grow_from_right() {
+        const TOTAL_LEN: usize = 10;
+        let mut data = vec![Item::Unint; TOTAL_LEN];
+        for left_len in 0..TOTAL_LEN {
+            let right_len = TOTAL_LEN - left_len;
+
+            for left_stash_len in 0..left_len {
+                for right_stash_len in 0..right_len {
+                    for left_growth in 0..right_stash_len {
+                        let (mut left, mut right) = {
+                            let (left, right) = data.as_mut_slice().split_at_mut(left_len);
+                            (Block::new(left), Block::new(right))
+                        };
+
+                        left.set_num_processed(left_len - left_stash_len);
+                        right.set_num_processed(right_len - right_stash_len);
+
+                        left.data_processed_mut().fill(Item::ProcL);
+                        left.data_unprocessed_mut().fill(Item::Stash);
+                        right.data_processed_mut().fill(Item::ProcR);
+                        right.data_unprocessed_mut().fill(Item::Stash);
+
+                        left.grow_from_right(&mut right, left_growth);
+
+                        assert_eq!(left.len(), left_len + left_growth);
+                        assert_eq!(right.len(), right_len - left_growth);
+
+                        assert_eq!(left.num_unprocessed(), left_stash_len + left_growth);
+                        assert_eq!(right.num_unprocessed(), right_stash_len - left_growth);
+
+                        assert!(left.data_processed().iter().all(|&x| x == Item::ProcL));
+                        assert!(right.data_processed().iter().all(|&x| x == Item::ProcR));
+
+                        assert!(left
+                            .data_unprocessed_mut()
+                            .iter()
+                            .all(|&x| x == Item::Stash));
+
+                        assert!(right
+                            .data_unprocessed_mut()
+                            .iter()
+                            .all(|&x| x == Item::Stash));
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn len() {
