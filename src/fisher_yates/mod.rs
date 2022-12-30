@@ -2,6 +2,7 @@ use super::uniform_index;
 use rand::Rng;
 
 pub mod naive;
+pub(crate) mod noncontiguous;
 
 #[cfg(feature = "prefetch")]
 pub mod with_prefetch;
