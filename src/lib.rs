@@ -3,13 +3,13 @@
 #![feature(slice_swap_unchecked)]
 
 pub mod fisher_yates;
-pub mod merge_shuffle;
 pub mod random_bits;
+pub mod scatter_shuffle;
 pub mod uniform_index;
 
 pub mod prelude {
     pub use super::fisher_yates::fisher_yates;
-    pub use super::merge_shuffle::merge_shuffle;
+    pub use super::scatter_shuffle::sequential::seq_scatter_shuffle;
 }
 
 mod blocked;
