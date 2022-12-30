@@ -40,7 +40,7 @@ pub fn scatter_shuffle_impl<R, T, const NUM_BLOCKS: usize, const BASE_CASE_SIZE:
     rough_shuffle(rng, &mut blocks);
 
     let num_unprocessed = shuffle_stashes(rng, &mut blocks, recurse);
-    let target_lengths = draw_target_lengths(rng, num_unprocessed, &mut blocks);
+    let target_lengths = draw_target_lengths(rng, num_unprocessed, &blocks);
     move_blocks_to_fit_target_len(&mut blocks, &target_lengths);
 
     for block in &mut blocks {
@@ -158,7 +158,7 @@ fn shrink_sweep_to_left<T, const NUM_BLOCKS: usize>(
 fn draw_target_lengths<R: Rng, T, const NUM_BLOCKS: usize>(
     rng: &mut R,
     num_unprocessed: usize,
-    blocks: &mut Blocks<T, NUM_BLOCKS>,
+    blocks: &Blocks<T, NUM_BLOCKS>,
 ) -> [usize; NUM_BLOCKS] {
     fn multinomial<R: Rng>(
         rng: &mut R,
@@ -178,11 +178,11 @@ fn draw_target_lengths<R: Rng, T, const NUM_BLOCKS: usize>(
 
     let mut target_len = [0usize; NUM_BLOCKS];
 
-    for (target, (block, additional)) in target_len.iter_mut().zip(
-        blocks
-            .iter_mut()
-            .zip(multinomial(rng, NUM_BLOCKS, num_unprocessed)),
-    ) {
+    for (target, (block, additional)) in target_len.iter_mut().zip(blocks.iter().zip(multinomial(
+        rng,
+        NUM_BLOCKS,
+        num_unprocessed,
+    ))) {
         *target = block.num_processed() + additional;
     }
 
@@ -191,210 +191,255 @@ fn draw_target_lengths<R: Rng, T, const NUM_BLOCKS: usize>(
 
 #[cfg(test)]
 mod test {
+    use itertools::Itertools;
     use rand::{seq::SliceRandom, SeedableRng};
     use rand_pcg::Pcg64;
 
     use super::*;
-    /*
+
+    macro_rules! invoke_for_pot {
+        ($func : ident) => {
+            let mut rng = Pcg64::seed_from_u64(12345);
+            $func::<1>(&mut rng);
+            $func::<2>(&mut rng);
+            $func::<4>(&mut rng);
+            $func::<8>(&mut rng);
+            $func::<16>(&mut rng);
+            $func::<32>(&mut rng);
+            $func::<64>(&mut rng);
+            $func::<128>(&mut rng);
+        };
+    }
+
+    macro_rules! invoke_with_random_blocks {
+        ($func:ident) => {
+            fn generate_random_data<const NUM_BLOCKS: usize>(rng: &mut impl Rng) {
+                let mut data = Vec::new();
+
+                for _ in 0..10 {
+                    let blocks = generate_random_blocks::<NUM_BLOCKS>(rng, &mut data);
+                    let num_unprocessed = blocks.iter().map(|blk| blk.num_unprocessed()).sum();
+                    let target_lengths: [usize; NUM_BLOCKS] =
+                        draw_target_lengths(rng, num_unprocessed, &blocks);
+
+                    $func(rng, blocks, target_lengths);
+                }
+            }
+
+            invoke_for_pot!(generate_random_data);
+        };
+    }
+
     #[test]
     fn draw_unprocessed_distribution() {
-        fn helper<const NUM_BLOCKS: usize>(rng: &mut impl Rng) {
+        fn test_impl<const NUM_BLOCKS: usize>(rng: &mut impl Rng) {
             let total_length = 10 * NUM_BLOCKS;
             let mut data = vec![0; total_length];
             let mut blocks = split_slice_into_blocks(&mut data);
+            for block in &mut blocks {
+                block.set_num_processed(block.len());
+            }
 
             let num_unprocessed = rng.gen_range(NUM_BLOCKS..total_length);
             for _ in 0..num_unprocessed {
                 loop {
-                    let block = blocks.choose_mut(&mut rng).unwrap();
-                    if block.len() > block.num_unprocessed {
-                        block.num_unprocessed += 1;
+                    let block = blocks.choose_mut(rng).unwrap();
+                    if block.num_processed() > 0 {
+                        block.set_num_processed(block.num_processed() - 1);
                         break;
                     }
                 }
             }
 
-            super::draw_unprocessed_distribution(&mut rng, num_unprocessed, &mut blocks);
+            let target_lengths: [usize; NUM_BLOCKS] =
+                super::draw_target_lengths(rng, num_unprocessed, &blocks);
 
             assert!(blocks
                 .iter()
-                .all(|blk| blk.target_len >= blk.num_processed()));
+                .zip_eq(&target_lengths)
+                .all(|(blk, &target)| target >= blk.num_processed()));
 
-            assert_eq!(
-                blocks.iter().map(|blk| blk.target_len).sum::<usize>(),
-                total_length
-            );
+            assert_eq!(target_lengths.iter().sum::<usize>(), total_length);
         }
 
-        let mut rng = Pcg64::seed_from_u64(12345);
-        helper::<1>(&mut rng);
-        helper::<2>(&mut rng);
-        helper::<4>(&mut rng);
-        helper::<8>(&mut rng);
-        helper::<32>(&mut rng);
-        helper::<128>(&mut rng);
+        invoke_for_pot!(test_impl);
     }
-    */
 
-    /*
     #[test]
     fn compact_ranges() {
-        let mut rng = Pcg64::seed_from_u64(12345);
+        fn test_impl<const NUM_BLOCKS: usize>(
+            _rng: &mut impl Rng,
+            mut blocks: Blocks<usize, NUM_BLOCKS>,
+            _target_lengths: [usize; NUM_BLOCKS],
+        ) {
+            let num_stash: usize = blocks.iter().map(|r| r.num_unprocessed()).sum();
+            if num_stash > blocks.last().unwrap().len() {
+                return;
+            }
 
-        for i in 1..1000 {
-            let blocks = generate_random_blocks(&mut rng, i);
-            let len = blocks.last().unwrap().end + rng.gen_range(0..10);
-            let mut data = generate_data_with_unprocessed_marked(len, &blocks);
+            mark_unprocessed_data(&mut blocks);
 
-            let num_stash: usize = blocks.iter().map(|r| r.num_unprocessed).sum();
+            super::compact_ranges(&mut blocks);
 
-            super::compact_ranges(&mut data, &blocks);
-            assert!(data[..data.len() - num_stash].iter().all(|x| *x == 0));
+            assert_eq!(
+                blocks.iter().map(|r| r.num_unprocessed()).sum::<usize>(),
+                num_stash
+            );
+
+            assert!(blocks
+                .last()
+                .unwrap()
+                .data()
+                .suffix(num_stash)
+                .iter()
+                .all(|x| *x != 0));
+
+            let data = merge_data(&blocks);
 
             assert_eq!(
                 sort_dedup(&data),
                 (0..=num_stash).into_iter().collect_vec(),
-                "i={}, ranges={:?}",
-                i,
-                &blocks
+                "num_stash = {num_stash}"
             );
         }
+
+        invoke_with_random_blocks!(test_impl);
     }
-    /*
+
+    macro_rules! shrink_sweep_test_skeleton {
+        ($sweep : ident) => {
+            fn test_impl<const NUM_BLOCKS: usize>(
+                _rng: &mut impl Rng,
+                mut blocks: Blocks<usize, NUM_BLOCKS>,
+                target_lengths: [usize; NUM_BLOCKS],
+            ) {
+                mark_unprocessed_data(&mut blocks);
+
+                assert_processed_are_zero(&blocks);
+                assert_unprocessed_are_non_zero(&blocks);
+                let unprocessed_before = sort_dedup(&merge_data(&blocks));
+
+                $sweep(&mut blocks, &target_lengths);
+
+                assert_processed_are_zero(&blocks);
+                assert_unprocessed_are_non_zero(&blocks);
+                let unprocessed_after = sort_dedup(&merge_data(&blocks));
+
+                assert_eq!(unprocessed_before, unprocessed_after,);
+            }
+
+            invoke_with_random_blocks!(test_impl);
+        };
+    }
+
     #[test]
     fn shrink_sweep_to_left() {
-        let mut rng = Pcg64::seed_from_u64(123456);
-        shrink_sweep_test_skeleton(&mut rng, |data, blocks| {
-            super::shrink_sweep_to_left(data, blocks);
-            for (block_idx, block) in blocks.iter().skip(1).enumerate() {
-                assert!(
-                    block.len() <= block.target_len,
-                    "block_idx = {block_idx}, block = {block:?}"
-                );
+        fn sweep<const NUM_BLOCKS: usize>(
+            blocks: &mut Blocks<usize, NUM_BLOCKS>,
+            target_lengths: &[usize; NUM_BLOCKS],
+        ) {
+            super::shrink_sweep_to_left(blocks, target_lengths);
+            for (block_idx, (block, &target)) in
+                blocks.iter().zip(target_lengths).enumerate().skip(1)
+            {
+                assert!(block.len() <= target, "block_idx = {block_idx}");
             }
-        });
+        }
+
+        shrink_sweep_test_skeleton!(sweep);
     }
 
     #[test]
     fn shrink_sweep_to_right() {
-        let mut rng = Pcg64::seed_from_u64(1234567);
-        shrink_sweep_test_skeleton(&mut rng, |data, blocks| {
-            super::shrink_sweep_to_right(data, blocks);
-            let num_blocks = blocks.len();
-            for (block_idx, block) in blocks.iter().take(num_blocks - 1).enumerate() {
-                assert!(
-                    block.len() <= block.target_len,
-                    "block_idx = {block_idx}, block = {block:?}"
-                );
+        fn sweep<const NUM_BLOCKS: usize>(
+            blocks: &mut Blocks<usize, NUM_BLOCKS>,
+            target_lengths: &[usize; NUM_BLOCKS],
+        ) {
+            super::shrink_sweep_to_right(blocks, target_lengths);
+            for (block_idx, (block, &target)) in blocks
+                .iter()
+                .zip(target_lengths)
+                .take(NUM_BLOCKS - 1)
+                .enumerate()
+            {
+                assert!(block.len() <= target, "block_idx = {block_idx}");
             }
-        });
+        }
+
+        shrink_sweep_test_skeleton!(sweep);
     }
 
     #[test]
     fn move_blocks_to_fit_target_len() {
-        let mut rng = Pcg64::seed_from_u64(123456789);
-        for _ in 0..10 {
-            shrink_sweep_test_skeleton(&mut rng, |data, blocks| {
-                super::move_blocks_to_fit_target_len(data, blocks);
-                assert!(blocks.iter().all(|blk| blk.len() == blk.target_len));
-            });
+        fn sweep<const NUM_BLOCKS: usize>(
+            blocks: &mut Blocks<usize, NUM_BLOCKS>,
+            target_lengths: &[usize; NUM_BLOCKS],
+        ) {
+            super::move_blocks_to_fit_target_len(blocks, target_lengths);
+            for (block_idx, (block, &target)) in blocks.iter().zip(target_lengths).enumerate() {
+                assert!(block.len() == target, "block_idx = {block_idx}");
+            }
         }
-    } */
 
-    ///////////////// HELPER
-
-    fn shrink_sweep_test_skeleton<R: Rng, T, F: Fn(&mut [usize], &mut [Block<T>])>(
-        rng: &mut R,
-        sweep: F,
-    ) {
-        for num_blocks in 2..100 {
-            let mut blocks = generate_random_blocks_with_target_length(rng, num_blocks);
-            let mut data =
-                generate_data_with_unprocessed_marked(blocks.last().unwrap().end, &blocks);
-
-            assert_processed_are_zero(&data, &blocks);
-            assert_unprocessed_are_non_zero(&data, &blocks);
-            let unprocessed_before = sort_dedup(&data);
-
-            sweep(&mut data, &mut blocks);
-            assert_processed_are_zero(&data, &blocks);
-            assert_unprocessed_are_non_zero(&data, &blocks);
-            let unprocessed_after = sort_dedup(&data);
-
-            assert_eq!(
-                unprocessed_before, unprocessed_after,
-                "num_blocks={num_blocks}"
-            );
-        }
+        shrink_sweep_test_skeleton!(sweep);
     }
 
+    fn generate_random_blocks<'a, const NUM_BLOCKS: usize>(
+        rng: &mut impl Rng,
+        storage: &'a mut Vec<usize>,
+    ) -> Blocks<'a, usize, NUM_BLOCKS> {
+        let sizes = (0..NUM_BLOCKS)
+            .into_iter()
+            .map(|_| (rng.gen_range(0..30), rng.gen_range(0..10)))
+            .collect_vec();
+        storage.resize(sizes.iter().map(|(a, b)| a + b).sum(), 0);
 
-    fn generate_random_blocks<R: Rng>(rng: &mut R, num_blocks: usize) -> Vec<Block> {
-        let mut blocks = Vec::with_capacity(num_blocks);
-
-        let mut begin = 0;
-        for _ in 0..num_blocks {
-            let num_proc = rng.gen_range(0..30);
-            let num_unproc = rng.gen_range(0..10);
-            let end = begin + num_proc + num_unproc;
-
-            let mut block: Block = (begin..end).into();
-            block.num_unprocessed = num_unproc;
-
-            blocks.push(block);
-            begin = end;
+        let mut data = storage.as_mut_slice();
+        let mut blocks = Vec::new();
+        for sze in &sizes {
+            let block;
+            (block, data) = data.split_at_mut(sze.0 + sze.1);
+            blocks.push(Block::new_with_num_unprocessed(block, sze.1));
         }
 
+        blocks.into_iter().collect()
+    }
+
+    fn mark_unprocessed_data(blocks: &mut [Block<usize>]) {
         blocks
-    }
-
-    fn generate_random_blocks_with_target_length<R: Rng>(
-        rng: &mut R,
-        num_blocks: usize,
-    ) -> Vec<Block> {
-        let mut blocks = generate_random_blocks(rng, num_blocks);
-        let total_num_unprocessed = blocks.iter().map(|blk| blk.num_unprocessed).sum();
-        for (blk, add) in blocks
             .iter_mut()
-            .zip(multinomial(rng, num_blocks, total_num_unprocessed))
-        {
-            blk.target_len = blk.num_processed() + add;
-        }
-        blocks
-    }
+            .for_each(|blk| blk.data_processed_mut().fill(0));
 
-    fn generate_data_with_unprocessed_marked(len: usize, blocks: &[Block]) -> Vec<usize> {
-        let mut data = vec![0; len];
-        for (val, idx) in blocks
-            .iter()
-            .flat_map(|r| r.range_unprocessed())
+        for (idx, value) in blocks
+            .iter_mut()
+            .flat_map(|r| r.data_unprocessed_mut().iter_mut())
             .enumerate()
         {
-            data[idx] = val + 1;
+            *value = idx + 1;
         }
-        data
     }
 
-    fn assert_processed_are_zero<T: Debug + Zero>(data: &[T], blocks: &[Block]) {
+    fn assert_processed_are_zero(blocks: &[Block<usize>]) {
         for (block_idx, block) in blocks.iter().enumerate() {
-            for i in block.range_processed() {
-                assert!(
-                    data[i].is_zero(),
-                    "block_idx={block_idx} block={block:?} i={i}"
-                );
+            for (idx, &dat) in block.data_processed().iter().enumerate() {
+                assert_eq!(dat, 0, "block_idx={block_idx} i={idx}");
             }
         }
     }
 
-    fn assert_unprocessed_are_non_zero<T: PartialEq + Debug + Zero>(data: &[T], blocks: &[Block]) {
+    fn assert_unprocessed_are_non_zero(blocks: &[Block<usize>]) {
         for (block_idx, block) in blocks.iter().enumerate() {
-            for i in block.range_unprocessed() {
-                assert!(
-                    !data[i].is_zero(),
-                    "block_idx={block_idx} block={block:?} i={i}"
-                );
+            for (idx, &dat) in block.data_unprocessed().iter().enumerate() {
+                assert_ne!(dat, 0, "block_idx={block_idx} i={idx}");
             }
         }
+    }
+
+    fn merge_data<T: Copy>(blocks: &[Block<T>]) -> Vec<T> {
+        blocks
+            .iter()
+            .flat_map(|blk| blk.data().iter().copied())
+            .collect()
     }
 
     fn sort_dedup<T: Copy + Ord>(data: &[T]) -> Vec<T> {
@@ -403,7 +448,6 @@ mod test {
         data.dedup();
         data
     }
-    */
 }
 
 #[cfg(test)]
