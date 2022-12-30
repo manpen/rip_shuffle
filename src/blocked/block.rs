@@ -32,6 +32,22 @@ impl<'a, T> Block<'a, T> {
         }
     }
 
+    pub fn pop(&mut self) -> Option<&mut T> {
+        let data = std::mem::take(&mut self.data);
+        if let Some((elem, slice)) = data.split_last_mut() {
+            self.data = slice;
+            Some(elem)
+        } else {
+            None
+        }
+    }
+
+    pub fn push(&mut self, elem: &'a mut T) {
+        let rhs = std::slice::from_mut(elem);
+        let data = std::mem::take(&mut self.data);
+        self.data = data.merge_with_right_neighbor(rhs);
+    }
+
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
@@ -94,13 +110,13 @@ impl<'a, T> Block<'a, T> {
         self.data.prefix(self.num_processed)
     }
 
-    pub fn peek_next_element_to_be_processed(&mut self) -> Option<&mut T> {
+    pub fn first_unprocessed(&mut self) -> Option<&mut T> {
         self.data.get_mut(self.num_processed)
     }
 
     pub fn process_element(&mut self) -> Option<&mut T> {
         self.num_processed += 1;
-        self.peek_next_element_to_be_processed()
+        self.first_unprocessed()
     }
 
     pub fn move_stash_to_right_neighbor(&mut self, rhs: &mut Self) {
@@ -147,7 +163,7 @@ mod test {
                 assert!(!block.is_fully_processed());
                 assert_eq!(block.num_processed(), j);
                 assert_eq!(block.num_unprocessed(), i - j);
-                assert_eq!(*block.peek_next_element_to_be_processed().unwrap(), j);
+                assert_eq!(*block.first_unprocessed().unwrap(), j);
                 assert_eq!(block.process_element().is_some(), j + 1 < i);
             }
 
@@ -170,7 +186,7 @@ mod test {
             let mut block = Block::new(&mut data);
 
             for j in 0..i {
-                *block.peek_next_element_to_be_processed().unwrap() = j + 1;
+                *block.first_unprocessed().unwrap() = j + 1;
                 block.process_element();
 
                 // data

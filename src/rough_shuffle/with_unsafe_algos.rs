@@ -5,6 +5,7 @@ use std::{
 
 use super::*;
 
+#[allow(dead_code)]
 pub(super) fn rough_shuffle<R: Rng, T, const LOG_NUM_BLOCKS: usize, const NUM_BLOCKS: usize>(
     rng: &mut R,
     blocks: &mut Blocks<T, NUM_BLOCKS>,
@@ -89,4 +90,11 @@ pub(super) fn rough_shuffle<R: Rng, T, const LOG_NUM_BLOCKS: usize, const NUM_BL
         }
         rounds = shortest_range / num_swaps_per_round;
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{common_tests, rough_shuffle};
+
+    common_tests::rough_shuffle_tests!(rough_shuffle);
 }

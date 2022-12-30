@@ -57,9 +57,9 @@ mod test {
 
                 for (i, n) in [n0, n1, n2, n3].into_iter().enumerate() {
                     for _ in 0..n {
-                        *blocks[i].peek_next_element_to_be_processed().unwrap() = 1;
                         blocks[i].process_element();
                     }
+                    blocks[i].data_processed_mut().fill(1);
                 }
 
                 let compact = super::compact_into_single_block(blocks);

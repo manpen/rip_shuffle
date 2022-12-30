@@ -6,15 +6,16 @@ use super::blocked::*;
 use super::rough_shuffle::*;
 
 use rand::Rng;
+use std::fmt::Debug;
 
 const DEFAULT_NUM_BLOCKS: usize = 128;
 const DEFAULT_FY_BASE_CASE: usize = 1 << 16;
 
-pub fn merge_shuffle<R: Rng, T>(rng: &mut R, data: &mut [T]) {
+pub fn merge_shuffle<R: Rng, T: Debug>(rng: &mut R, data: &mut [T]) {
     merge_shuffle_impl::<R, T, DEFAULT_NUM_BLOCKS, DEFAULT_FY_BASE_CASE>(rng, data)
 }
 
-fn merge_shuffle_impl<R: Rng, T, const NUM_BLOCKS: usize, const FY_BASE_CASE: usize>(
+fn merge_shuffle_impl<R: Rng, T: Debug, const NUM_BLOCKS: usize, const FY_BASE_CASE: usize>(
     rng: &mut R,
     data: &mut [T],
 ) where
@@ -33,10 +34,11 @@ fn merge_shuffle_impl<R: Rng, T, const NUM_BLOCKS: usize, const FY_BASE_CASE: us
     rough_shuffle(rng, &mut blocks);
 
     let mut recombined = compact_into_single_block(blocks);
+
     insertion_shuffle(rng, &mut recombined);
 }
 
-fn insertion_shuffle<R: Rng, T>(rng: &mut R, block: &mut Block<T>) {
+pub fn insertion_shuffle<R: Rng, T: std::fmt::Debug>(rng: &mut R, block: &mut Block<T>) {
     let unprocessed_range = block.num_processed()..block.len();
     let data = block.data_mut();
 
@@ -50,7 +52,7 @@ fn insertion_shuffle<R: Rng, T>(rng: &mut R, block: &mut Block<T>) {
 mod test_ms2 {
     use super::*;
 
-    fn merge_shuffle_test<R: Rng, T>(rng: &mut R, data: &mut [T]) {
+    fn merge_shuffle_test<R: Rng, T: std::fmt::Debug>(rng: &mut R, data: &mut [T]) {
         merge_shuffle_impl::<R, T, 2, 2>(rng, data)
     }
 
@@ -62,7 +64,7 @@ mod test_ms2 {
 mod test_ms4 {
     use super::*;
 
-    fn merge_shuffle_test<R: Rng, T>(rng: &mut R, data: &mut [T]) {
+    fn merge_shuffle_test<R: Rng, T: std::fmt::Debug>(rng: &mut R, data: &mut [T]) {
         merge_shuffle_impl::<R, T, 4, 2>(rng, data)
     }
 

@@ -65,7 +65,7 @@ macro_rules! test_shuffle_algorithm {
                     assert_eq!(
                         ranks.len(),
                         n,
-                        "x = {}, n = {}, missin = {:?}",
+                        "x = {}, n = {}, missing = {:?}",
                         x,
                         n,
                         missing
@@ -79,7 +79,7 @@ macro_rules! test_shuffle_algorithm {
         /// We therefore need `Theta(n*n*log(n))` many rounds per input sequence.
         #[test]
         fn test_2_independence() {
-            let mut rng = Pcg64Mcg::seed_from_u64(2345);
+            let mut rng = Pcg64Mcg::seed_from_u64(2345789);
 
             for n in [5usize, 17, 23] {
                 let num_items = (n as f64).powi(2);
