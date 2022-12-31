@@ -46,8 +46,8 @@ where
 {
     macro_rules! entry {
         ($log_n : expr) => {{
-            //#[cfg(feature = "unsafe_algos")]
-            //with_unsafe_algos::rough_shuffle::<R, T, $log_n, N>(rng, blocks);
+            #[cfg(feature = "unsafe_algos")]
+            with_unsafe_algos::rough_shuffle::<R, T, $log_n, N>(rng, blocks);
 
             // the unsafe algo may terminate early. then the naive algo takes over.
             naive::rough_shuffle::<R, T, $log_n, N>(rng, blocks);

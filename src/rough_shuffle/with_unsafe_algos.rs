@@ -21,12 +21,17 @@ pub(super) fn rough_shuffle<R: Rng, T, const LOG_NUM_BLOCKS: usize, const NUM_BL
     // anymore. Thus, we represend each range only by its base pointer:
     let mut base_ptrs = [NonNull::<T>::dangling().as_ptr(); NUM_BLOCKS];
     for (ptr, block) in base_ptrs.iter_mut().zip(blocks.iter_mut()) {
-        *ptr = block.data_mut().as_mut_ptr();
+        *ptr = block.data_unprocessed_mut().as_mut_ptr();
     }
 
     // we can safely carry out MIN swaps where MIN is the length of the shortest range. Since in each
     // round we perform `num_swaps_per_round` many swaps, number of rounds `rounds` is divided by this size.
-    let mut rounds = blocks.iter().map(|blk| blk.len()).min().unwrap() / num_swaps_per_round;
+    let mut rounds = blocks
+        .iter()
+        .map(|blk| blk.num_unprocessed())
+        .min()
+        .unwrap()
+        / num_swaps_per_round;
 
     while rounds >= 8 {
         // ^^ threshold found experimentally and not too critical

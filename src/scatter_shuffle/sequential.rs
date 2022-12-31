@@ -4,9 +4,6 @@ use crate::fisher_yates::noncontiguous::noncontiguous_fisher_yates;
 use crate::prelude::*;
 use crate::rough_shuffle::*;
 
-#[cfg(feature = "timeiss")]
-use std::time::Instant;
-
 use arrayvec::ArrayVec;
 use rand::Rng;
 use rand_distr::Distribution;
@@ -48,7 +45,7 @@ pub fn scatter_shuffle_impl<R, T, const NUM_BLOCKS: usize, const BASE_CASE_SIZE:
     }
 }
 
-fn shuffle_stashes<R: Rng, T, const NUM_BLOCKS: usize>(
+pub fn shuffle_stashes<R: Rng, T, const NUM_BLOCKS: usize>(
     rng: &mut R,
     blocks: &mut Blocks<T, NUM_BLOCKS>,
     mut recurse: impl FnMut(&mut R, &mut [T]),
@@ -103,7 +100,7 @@ pub fn compact_ranges<T>(blocks: &mut [Block<T>]) -> usize {
     num_accepted
 }
 
-fn move_blocks_to_fit_target_len<T, const NUM_BLOCKS: usize>(
+pub fn move_blocks_to_fit_target_len<T, const NUM_BLOCKS: usize>(
     blocks: &mut Blocks<T, NUM_BLOCKS>,
     target_lengths: &[usize; NUM_BLOCKS],
 ) {
@@ -155,7 +152,7 @@ fn shrink_sweep_to_left<T, const NUM_BLOCKS: usize>(
     }
 }
 
-fn draw_target_lengths<R: Rng, T, const NUM_BLOCKS: usize>(
+pub fn draw_target_lengths<R: Rng, T, const NUM_BLOCKS: usize>(
     rng: &mut R,
     num_unprocessed: usize,
     blocks: &Blocks<T, NUM_BLOCKS>,

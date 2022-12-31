@@ -167,6 +167,23 @@ impl<'a, T> Block<'a, T> {
             left.swap_with_slice(right);
         }
     }
+
+    pub fn split_in_half(&mut self) -> Self {
+        let num_half = self.len() / 2;
+
+        let data = std::mem::take(&mut self.data);
+        let (left, right) = data.split_at_mut(num_half);
+
+        let right_processed = self.num_processed.saturating_sub(num_half);
+
+        self.data = left;
+        self.num_processed = self.num_processed.min(num_half);
+
+        Self {
+            data: right,
+            num_processed: right_processed,
+        }
+    }
 }
 
 #[cfg(test)]

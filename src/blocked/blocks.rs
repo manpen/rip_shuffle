@@ -28,6 +28,12 @@ pub fn compact_into_single_block<T, const N: usize>(mut blocks: Blocks<T, N>) ->
     result
 }
 
+pub fn split_each_block_in_half<'a, T, const N: usize>(
+    blocks: &mut Blocks<'a, T, N>,
+) -> Blocks<'a, T, N> {
+    blocks.iter_mut().map(|left| left.split_in_half()).collect()
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
