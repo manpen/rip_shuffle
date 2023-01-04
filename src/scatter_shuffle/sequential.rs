@@ -1,3 +1,4 @@
+use super::*;
 use crate::blocked::slicing::Slicing;
 use crate::blocked::*;
 use crate::fisher_yates::noncontiguous::noncontiguous_fisher_yates;
@@ -12,24 +13,29 @@ pub const LOG_NUM_BLOCKS: usize = 7;
 pub const NUM_BLOCKS: usize = 1 << LOG_NUM_BLOCKS;
 pub const BASE_CASE_SIZE: usize = 1 << 18;
 
+#[derive(Clone, Copy, Default)]
+struct DefaultConfiguration {}
+implement_seq_config!(DefaultConfiguration, fisher_yates, 1 << 19);
+
 pub fn seq_scatter_shuffle<R: Rng, T>(rng: &mut R, data: &mut [T]) {
-    scatter_shuffle_impl::<R, T, NUM_BLOCKS, BASE_CASE_SIZE>(rng, data)
+    scatter_shuffle_impl::<R, T, _, NUM_BLOCKS>(rng, data, &DefaultConfiguration::default())
 }
 
-pub fn scatter_shuffle_impl<R, T, const NUM_BLOCKS: usize, const BASE_CASE_SIZE: usize>(
+pub fn scatter_shuffle_impl<R, T, C: SeqConfiguration, const NUM_BLOCKS: usize>(
     rng: &mut R,
     data: &mut [T],
+    config: &C,
 ) where
     R: Rng,
     T: Sized,
     NumberOfBlocks<NUM_BLOCKS>: IsPowerOfTwo,
 {
-    if data.len() <= BASE_CASE_SIZE {
-        return fisher_yates(rng, data);
+    if data.len() <= config.seq_base_case_size() {
+        return config.seq_base_case_shuffle(rng, data);
     }
 
     let recurse = |rng: &mut R, data: &mut [T]| {
-        scatter_shuffle_impl::<R, T, NUM_BLOCKS, BASE_CASE_SIZE>(rng, data)
+        scatter_shuffle_impl::<R, T, C, NUM_BLOCKS>(rng, data, config)
     };
 
     let mut blocks = split_slice_into_blocks(data);
@@ -467,8 +473,12 @@ mod integration_test {
         data: &mut [T],
     ) {
         const NUM_BLOCKS: usize = 4;
-        const BASE_CASE_SIZE: usize = NUM_BLOCKS * 4;
-        scatter_shuffle_impl::<R, T, NUM_BLOCKS, BASE_CASE_SIZE>(rng, data)
+
+        #[derive(Clone, Copy, Default)]
+        struct TestConfiguration {}
+        implement_seq_config!(TestConfiguration, fisher_yates, NUM_BLOCKS * 4);
+
+        scatter_shuffle_impl::<R, T, _, NUM_BLOCKS>(rng, data, &TestConfiguration::default())
     }
 
     crate::statistical_tests::test_shuffle_algorithm!(inplace_scatter_shuffle_test);

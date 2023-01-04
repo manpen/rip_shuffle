@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
-use super::sequential;
+use super::*;
 use crate::blocked::*;
+use crate::fisher_yates::fisher_yates;
 use crate::rough_shuffle::*;
 
 use rand::Rng;
@@ -10,35 +11,22 @@ use rand::SeedableRng;
 pub const LOG_NUM_BLOCKS: usize = 7;
 pub const NUM_BLOCKS: usize = 1 << LOG_NUM_BLOCKS;
 
-pub trait Configuration: Send + Sync {
-    fn base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]);
-    fn sequential_base_case_size(&self) -> usize;
-    fn number_problems(&self, n: usize) -> usize;
-
-    fn try_base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) -> bool {
-        if data.len() < self.sequential_base_case_size() {
-            self.base_case_shuffle(rng, data);
-            true
-        } else {
-            false
-        }
-    }
-}
-
 #[derive(Clone, Copy, Default)]
 struct DefaultConfiguration {}
-impl Configuration for DefaultConfiguration {
-    fn base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) {
-        const FY_BASE_CASE: usize = 1 << 17;
-        sequential::scatter_shuffle_impl::<R, T, NUM_BLOCKS, FY_BASE_CASE>(rng, data)
+
+implement_seq_config!(DefaultConfiguration, fisher_yates, 1 << 16);
+
+impl ParConfiguration for DefaultConfiguration {
+    fn par_base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) {
+        sequential::scatter_shuffle_impl::<R, T, _, NUM_BLOCKS>(rng, data, self)
     }
 
-    fn sequential_base_case_size(&self) -> usize {
+    fn par_base_case_size(&self) -> usize {
         1 << 20
     }
 
-    fn number_problems(&self, n: usize) -> usize {
-        (n / 2 / self.sequential_base_case_size())
+    fn par_number_of_subproblems(&self, n: usize) -> usize {
+        (n / 2 / self.par_base_case_size())
             .max(256)
             .next_power_of_two()
     }
@@ -75,7 +63,7 @@ impl<R, T, C, const NUM_BLOCKS: usize> ParScatterShuffleImpl<R, T, C, NUM_BLOCKS
 where
     R: Rng + SeedableRng + Send + Sync,
     T: Send + Sync + Sized,
-    C: Configuration,
+    C: ParConfiguration,
     NumberOfBlocks<NUM_BLOCKS>: IsPowerOfTwo,
 {
     pub fn new(config: C) -> Self {
@@ -89,12 +77,12 @@ where
     pub fn shuffle(&self, rng: &mut R, data: &mut [T]) {
         let n = data.len();
 
-        if self.config.try_base_case_shuffle(rng, data) {
-            return;
+        if n < self.config.par_base_case_size() {
+            return self.config.par_base_case_shuffle(rng, data);
         }
 
         let mut blocks = split_slice_into_blocks(data);
-        Self::rough_shuffle(rng, &mut blocks, self.config.number_problems(n));
+        Self::rough_shuffle(rng, &mut blocks, self.config.par_number_of_subproblems(n));
         let num_unprocessed =
             sequential::shuffle_stashes(rng, &mut blocks, |r: &mut R, d: &mut [T]| {
                 self.shuffle(r, d)
@@ -162,18 +150,20 @@ mod integration_test {
 
     #[derive(Clone, Copy, Default)]
     struct TestConfiguration {}
-    impl Configuration for TestConfiguration {
-        fn base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) {
-            const FY_BASE_CASE: usize = 2;
-            sequential::scatter_shuffle_impl::<R, T, NUM_BLOCKS, FY_BASE_CASE>(rng, data)
+
+    implement_seq_config!(TestConfiguration, fisher_yates, 2);
+
+    impl ParConfiguration for TestConfiguration {
+        fn par_base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) {
+            sequential::scatter_shuffle_impl::<R, T, _, NUM_BLOCKS>(rng, data, self)
         }
 
-        fn sequential_base_case_size(&self) -> usize {
+        fn par_base_case_size(&self) -> usize {
             1 << 18
         }
 
-        fn number_problems(&self, n: usize) -> usize {
-            (n / 2 / self.sequential_base_case_size()).max(1024)
+        fn par_number_of_subproblems(&self, n: usize) -> usize {
+            (n / 2 / self.par_base_case_size()).max(1024)
         }
     }
 
