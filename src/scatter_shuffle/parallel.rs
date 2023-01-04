@@ -29,16 +29,18 @@ pub trait Configuration: Send + Sync {
 struct DefaultConfiguration {}
 impl Configuration for DefaultConfiguration {
     fn base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) {
-        const FY_BASE_CASE: usize = 1 << 16;
+        const FY_BASE_CASE: usize = 1 << 17;
         sequential::scatter_shuffle_impl::<R, T, NUM_BLOCKS, FY_BASE_CASE>(rng, data)
     }
 
     fn sequential_base_case_size(&self) -> usize {
-        1 << 18
+        1 << 20
     }
 
     fn number_problems(&self, n: usize) -> usize {
-        (n / 2 / self.sequential_base_case_size()).max(128)
+        (n / 2 / self.sequential_base_case_size())
+            .max(256)
+            .next_power_of_two()
     }
 }
 
@@ -92,13 +94,12 @@ where
         }
 
         let mut blocks = split_slice_into_blocks(data);
-
         Self::rough_shuffle(rng, &mut blocks, self.config.number_problems(n));
-
         let num_unprocessed =
             sequential::shuffle_stashes(rng, &mut blocks, |r: &mut R, d: &mut [T]| {
                 self.shuffle(r, d)
             });
+
         let target_lengths = sequential::draw_target_lengths(rng, num_unprocessed, &blocks);
         sequential::move_blocks_to_fit_target_len(&mut blocks, &target_lengths);
 
