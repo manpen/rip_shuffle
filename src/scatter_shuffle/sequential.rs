@@ -46,8 +46,10 @@ pub fn scatter_shuffle_impl<R, T, C: SeqConfiguration, const NUM_BLOCKS: usize>(
     let target_lengths = draw_target_lengths(rng, num_unprocessed, &blocks);
     move_blocks_to_fit_target_len(&mut blocks, &target_lengths);
 
-    for block in &mut blocks {
-        recurse(rng, block.data_mut());
+    if !config.seq_disable_recursion() {
+        for block in &mut blocks {
+            recurse(rng, block.data_mut());
+        }
     }
 }
 

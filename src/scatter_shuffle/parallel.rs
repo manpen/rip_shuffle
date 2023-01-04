@@ -91,7 +91,9 @@ where
         let target_lengths = sequential::draw_target_lengths(rng, num_unprocessed, &blocks);
         sequential::move_blocks_to_fit_target_len(&mut blocks, &target_lengths);
 
-        self.recurse(rng, &mut blocks);
+        if !self.config.par_disable_recursion() {
+            self.recurse(rng, &mut blocks);
+        }
     }
 
     fn rough_shuffle(rng: &mut R, blocks: &mut Blocks<T, NUM_BLOCKS>, num_problems: usize) {
