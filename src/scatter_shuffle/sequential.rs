@@ -109,25 +109,56 @@ pub fn move_blocks_to_fit_target_len<T, const NUM_BLOCKS: usize>(
 
     debug_assert!(blocks
         .iter()
-        .zip(target_lengths)
+        .zip(target_lengths.iter())
         .all(|(blk, &target)| blk.len() == target));
+}
+
+fn get_ith_entry_and_right_neighbor<'a, 'b, T, const NUM_BLOCKS: usize>(
+    blocks: &'a mut Blocks<'b, T, NUM_BLOCKS>,
+    i: usize,
+) -> (&'a mut Block<'b, T>, &'a mut Block<'b, T>) {
+    let (l, r) = blocks.split_at_mut(i);
+    (l.last_mut().unwrap(), r.first_mut().unwrap())
 }
 
 fn shrink_sweep_to_right<T, const NUM_BLOCKS: usize>(
     blocks: &mut Blocks<T, NUM_BLOCKS>,
     target_lengths: &[usize; NUM_BLOCKS],
 ) {
-    let mut blocks = blocks.as_mut_slice();
-    for &target in target_lengths.iter().take(NUM_BLOCKS - 1) {
-        let this_block;
-        (this_block, blocks) = blocks.split_first_mut().unwrap();
+    // the i-th element holds the number of items the i-th block needs to grow to match it's target_length
+    let growth_required_iter = blocks
+        .iter()
+        .zip(target_lengths)
+        .map(|(blk, &target)| target as isize - blk.len() as isize);
 
-        if this_block.len() <= target {
-            continue;
+    // compute exclusive prefix sum of the iterator above
+    let growth_needed_left: ArrayVec<isize, NUM_BLOCKS> = growth_required_iter
+        .scan(0isize, |state, s| {
+            let old = *state;
+            *state += s;
+            Some(old)
+        })
+        .collect();
+
+    for (i, (&target_length, growth_needed_left)) in
+        target_lengths.iter().zip(growth_needed_left).enumerate()
+    {
+        // give to left if this block is too large and left needs some
+        if blocks[i].len() > target_length && growth_needed_left > 0 {
+            let shrink_by_atmost = blocks[i].len() - target_length;
+            let num_to_move = shrink_by_atmost.min(growth_needed_left as usize);
+
+            let (left_neighbor, this_block) = get_ith_entry_and_right_neighbor(blocks, i);
+            left_neighbor.grow_from_right(this_block, num_to_move);
         }
 
-        let too_long_by = this_block.len() - target;
-        this_block.shrink_to_right(&mut blocks[0], too_long_by);
+        // give to right if this block is still too large
+        if blocks[i].len() > target_length {
+            let num_to_move = blocks[i].len() - target_length;
+
+            let (this_block, right_neighbor) = get_ith_entry_and_right_neighbor(blocks, i + 1);
+            this_block.shrink_to_right(right_neighbor, num_to_move);
+        }
     }
 }
 
@@ -330,6 +361,21 @@ mod test {
     }
 
     #[test]
+    fn move_blocks_to_fit_target_len() {
+        fn sweep<const NUM_BLOCKS: usize>(
+            blocks: &mut Blocks<usize, NUM_BLOCKS>,
+            target_lengths: &[usize; NUM_BLOCKS],
+        ) {
+            super::move_blocks_to_fit_target_len(blocks, target_lengths);
+            for (block_idx, (block, &target)) in blocks.iter().zip(target_lengths).enumerate() {
+                assert!(block.len() == target, "block_idx = {block_idx}");
+            }
+        }
+
+        shrink_sweep_test_skeleton!(sweep);
+    }
+
+    #[test]
     fn shrink_sweep_to_left() {
         fn sweep<const NUM_BLOCKS: usize>(
             blocks: &mut Blocks<usize, NUM_BLOCKS>,
@@ -340,41 +386,6 @@ mod test {
                 blocks.iter().zip(target_lengths).enumerate().skip(1)
             {
                 assert!(block.len() <= target, "block_idx = {block_idx}");
-            }
-        }
-
-        shrink_sweep_test_skeleton!(sweep);
-    }
-
-    #[test]
-    fn shrink_sweep_to_right() {
-        fn sweep<const NUM_BLOCKS: usize>(
-            blocks: &mut Blocks<usize, NUM_BLOCKS>,
-            target_lengths: &[usize; NUM_BLOCKS],
-        ) {
-            super::shrink_sweep_to_right(blocks, target_lengths);
-            for (block_idx, (block, &target)) in blocks
-                .iter()
-                .zip(target_lengths)
-                .take(NUM_BLOCKS - 1)
-                .enumerate()
-            {
-                assert!(block.len() <= target, "block_idx = {block_idx}");
-            }
-        }
-
-        shrink_sweep_test_skeleton!(sweep);
-    }
-
-    #[test]
-    fn move_blocks_to_fit_target_len() {
-        fn sweep<const NUM_BLOCKS: usize>(
-            blocks: &mut Blocks<usize, NUM_BLOCKS>,
-            target_lengths: &[usize; NUM_BLOCKS],
-        ) {
-            super::move_blocks_to_fit_target_len(blocks, target_lengths);
-            for (block_idx, (block, &target)) in blocks.iter().zip(target_lengths).enumerate() {
-                assert!(block.len() == target, "block_idx = {block_idx}");
             }
         }
 
