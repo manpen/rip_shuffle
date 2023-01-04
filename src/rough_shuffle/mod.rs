@@ -5,7 +5,6 @@ use rand::Rng;
 mod common_tests;
 
 mod naive;
-mod stashed;
 
 #[cfg(feature = "unsafe_algos")]
 pub mod with_unsafe_algos;
@@ -45,12 +44,15 @@ where
     NumberOfBlocks<N>: IsPowerOfTwo,
 {
     macro_rules! entry {
-        ($log_n : expr) => {{
+        ($log_n : literal) => {{
+            const LOG_N: usize = $log_n;
+            const SWAPS_PER_ROUND: usize = 64 / $log_n;
+
             #[cfg(feature = "unsafe_algos")]
-            with_unsafe_algos::rough_shuffle::<R, T, $log_n, N>(rng, blocks);
+            with_unsafe_algos::rough_shuffle::<R, T, LOG_N, N, SWAPS_PER_ROUND>(rng, blocks);
 
             // the unsafe algo may terminate early. then the naive algo takes over.
-            naive::rough_shuffle::<R, T, $log_n, N>(rng, blocks);
+            naive::rough_shuffle::<R, T, LOG_N, N, SWAPS_PER_ROUND>(rng, blocks);
         }};
     }
 

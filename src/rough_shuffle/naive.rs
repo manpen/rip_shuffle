@@ -1,7 +1,13 @@
 use super::*;
 use crate::random_bits::RandomBitsSource;
 
-pub(super) fn rough_shuffle<R: Rng, T, const LOG_NUM_BLOCKS: usize, const NUM_BLOCKS: usize>(
+pub(super) fn rough_shuffle<
+    R: Rng,
+    T,
+    const LOG_NUM_BLOCKS: usize,
+    const NUM_BLOCKS: usize,
+    const _SWAPS_PER_ROUND: usize,
+>(
     rng: &mut R,
     blocks: &mut Blocks<T, NUM_BLOCKS>,
 ) {

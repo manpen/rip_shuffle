@@ -11,6 +11,7 @@ macro_rules! rough_shuffle_single_test {
 
             const LOG_NUM_BLOCKS: usize = $log_n;
             const NUM_BLOCKS: usize = 1 << LOG_NUM_BLOCKS;
+            const SWAPS_PER_ROUND: usize = 64 / $log_n;
             type R = Pcg64Mcg;
             type T = usize;
 
@@ -37,7 +38,7 @@ macro_rules! rough_shuffle_single_test {
                         let mut blocks =
                             split_slice_into_blocks::<usize, NUM_BLOCKS>(&mut data);
 
-                        $func :: <R, T, LOG_NUM_BLOCKS, NUM_BLOCKS>(
+                        $func :: <R, T, LOG_NUM_BLOCKS, NUM_BLOCKS, SWAPS_PER_ROUND>(
                             &mut rng,
                             &mut blocks,
                         );
@@ -73,7 +74,7 @@ macro_rules! rough_shuffle_single_test {
                         block_sizes[block_idx] = block.len();
                     }
 
-                    $func::<_, _, LOG_NUM_BLOCKS, NUM_BLOCKS>(rng, &mut blocks);
+                    $func::<_, _, LOG_NUM_BLOCKS, NUM_BLOCKS, SWAPS_PER_ROUND>(rng, &mut blocks);
 
                     let compact = compact_into_single_block(blocks);
 

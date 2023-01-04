@@ -14,6 +14,7 @@ pub mod prelude {
 }
 
 mod blocked;
+mod prefetch;
 mod rough_shuffle;
 
 #[cfg(test)]

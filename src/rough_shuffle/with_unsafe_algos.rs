@@ -1,99 +1,185 @@
+#![allow(clippy::needless_range_loop)]
+
 use std::{
-    mem::MaybeUninit,
-    ptr::{copy_nonoverlapping, NonNull},
+    mem::{ManuallyDrop, MaybeUninit},
+    ptr::copy_nonoverlapping,
 };
+
+use crate::prefetch::*;
 
 use super::*;
 
-#[allow(dead_code)]
-pub(super) fn rough_shuffle<R: Rng, T, const LOG_NUM_BLOCKS: usize, const NUM_BLOCKS: usize>(
+pub(super) fn rough_shuffle<
+    R: Rng,
+    T,
+    const LOG_NUM_BLOCKS: usize,
+    const NUM_BLOCKS: usize,
+    const SWAPS_PER_ROUND: usize,
+>(
     rng: &mut R,
     blocks: &mut Blocks<T, NUM_BLOCKS>,
 ) {
-    let mask = (1usize << LOG_NUM_BLOCKS) - 1;
-    let num_swaps_per_round = 64 / LOG_NUM_BLOCKS;
+    let mut first_unprocessed_in_block = BlockBasePointers::new(blocks);
 
-    let mut swap_stash = [MaybeUninit::<T>::uninit(), MaybeUninit::<T>::uninit()];
+    loop {
+        let rounds = first_unprocessed_in_block.length_of_shortest_block() / 2 / SWAPS_PER_ROUND;
+        if rounds <= 1 {
+            break;
+        }
 
-    // one optimization is that we do not check in-situ, whether a range got full and stop.
-    // we rather pessimitically check before hand how many rounds we can safely carry out.
-    // thereby we save a check per swap and also do not have to store end-of-range pointers
-    // anymore. Thus, we represend each range only by its base pointer:
-    let mut base_ptrs = [NonNull::<T>::dangling().as_ptr(); NUM_BLOCKS];
-    for (ptr, block) in base_ptrs.iter_mut().zip(blocks.iter_mut()) {
-        *ptr = block.data_unprocessed_mut().as_mut_ptr();
-    }
-
-    // we can safely carry out MIN swaps where MIN is the length of the shortest range. Since in each
-    // round we perform `num_swaps_per_round` many swaps, number of rounds `rounds` is divided by this size.
-    let mut rounds = blocks
-        .iter()
-        .map(|blk| blk.num_unprocessed())
-        .min()
-        .unwrap()
-        / num_swaps_per_round;
-
-    while rounds >= 8 {
-        // ^^ threshold found experimentally and not too critical
-
-        // a classical `std::mem::swap(a,b)` operation involves there data movements: tmp <- a, a <- b, and b <- tmp.
-        // here, we are a little bit more clever and use only two + epsilon many. During the run we use the following
-        // invariant: the value to be assigned next is in the `swap_stash[x]` where x is either 0 or 1; before overwriting
-        // the value in `data`, we move it into `swap_stash[1-x]` and then do the same for next swap with x=1-x.
-
-        // To get the ball rolling, we copy the first element of the first range (arbitrary choice!) into the stash and
-        // later put the last remaining item remaining in the stash back into that position.
-
-        // Memory safty: The only call within a round that may panic is `rng.gen()`. Observe, however, that our swapping
-        // algorithm only copies values bitwise to and fro the `swap_stash`. We additionally have the invariant, that each
-        // value in the stash at the begin of a round is still 'somewhere' in data. So we won't lose original data. Additionally,
-        // the stash is `MaybeUninit` which prevents the copies there from being dropped.
-        let first_element: *mut T = base_ptrs[0];
-        unsafe {
-            copy_nonoverlapping(first_element, swap_stash[0].as_mut_ptr(), 1);
-            base_ptrs[0] = base_ptrs[0].add(1);
-        };
+        let seed_for_stash: *mut T = first_unprocessed_in_block.fetch_and_increment(0);
+        let mut stash = Stash::new(unsafe { &mut *seed_for_stash });
 
         for _ in 0..rounds {
-            let rand: u64 = rng.gen();
+            let pointers_to_swap0 = prefetch::<_, _, LOG_NUM_BLOCKS, NUM_BLOCKS, SWAPS_PER_ROUND>(
+                rng,
+                &mut first_unprocessed_in_block,
+            );
+            let pointers_to_swap1 = prefetch::<_, _, LOG_NUM_BLOCKS, NUM_BLOCKS, SWAPS_PER_ROUND>(
+                rng,
+                &mut first_unprocessed_in_block,
+            );
 
-            for k in 0..num_swaps_per_round {
-                let index = (rand >> (LOG_NUM_BLOCKS * k)) as usize & mask;
-                let target_ptr = base_ptrs[index];
-
-                unsafe {
-                    base_ptrs[index] = target_ptr.add(1);
-                    copy_nonoverlapping(target_ptr, swap_stash[1 - (k % 2)].as_mut_ptr(), 1);
-                    copy_nonoverlapping(swap_stash[k % 2].as_ptr(), target_ptr, 1);
-                }
-            }
-
-            // we even share the stash in between rounds. if there's an odd number of swaps per round,
-            // the initially populated position in the stash would need to change. Instead, we make sure that
-            // the last element in the stash is always in `swap_stash[0]`.
-            if num_swaps_per_round % 2 != 0 {
-                unsafe {
-                    copy_nonoverlapping(swap_stash[1].as_ptr(), swap_stash[0].as_mut_ptr(), 1)
-                }
+            // since we execute two swaps per iteration, we're always sure that the first
+            // swap will be with the first stash lane
+            for k in 0..SWAPS_PER_ROUND {
+                stash.swap_assume_read_from::<0>(unsafe { &mut *pointers_to_swap0[k] });
+                stash.swap_assume_read_from::<1>(unsafe { &mut *pointers_to_swap1[k] });
             }
         }
 
         unsafe {
-            copy_nonoverlapping(swap_stash[0].as_mut_ptr(), first_element, 1);
-            std::ptr::swap(first_element, base_ptrs[0]);
-            base_ptrs[0] = base_ptrs[0].sub(1);
+            let current_base = first_unprocessed_in_block.fetch_and_decrement(0);
+            copy_nonoverlapping(current_base, seed_for_stash, 1);
+            stash.deconstruct(&mut *current_base);
+        }
+
+        first_unprocessed_in_block.synchronize_blocks(blocks);
+    }
+}
+
+fn prefetch<
+    R: Rng,
+    T,
+    const LOG_NUM_BLOCKS: usize,
+    const NUM_BLOCKS: usize,
+    const SWAPS_PER_ROUND: usize,
+>(
+    rng: &mut R,
+    first_unprocessed_in_block: &mut BlockBasePointers<T, NUM_BLOCKS>,
+) -> [*mut T; SWAPS_PER_ROUND] {
+    let mask = (1usize << LOG_NUM_BLOCKS) - 1;
+    let rand: u64 = rng.gen();
+
+    let mut buffer: [MaybeUninit<*mut T>; SWAPS_PER_ROUND] =
+        unsafe { MaybeUninit::uninit().assume_init() };
+
+    // compute and prefetch indices
+    for k in 0..SWAPS_PER_ROUND {
+        let index = (rand >> (k * LOG_NUM_BLOCKS)) as usize & mask;
+
+        let target_ptr = first_unprocessed_in_block.fetch_and_increment(index);
+
+        prefetch_write_data(unsafe { &mut *target_ptr });
+
+        buffer[k].write(target_ptr);
+    }
+
+    unsafe { std::mem::transmute_copy(&ManuallyDrop::new(buffer)) }
+}
+
+struct Stash<T> {
+    data: [MaybeUninit<T>; 2],
+    read_idx: usize,
+}
+
+impl<T> Stash<T> {
+    fn new(elem: &T) -> Self {
+        let mut stash = Self {
+            data: [MaybeUninit::<T>::uninit(), MaybeUninit::<T>::uninit()],
+            read_idx: 0,
         };
 
-        // We updated the base_ptrs array during our switches. We now need to mirror the updates back into
-        // our input data structure. At the same time, we compute the length of the shortest range to set
-        // the number of rounds to be carried out in the next run.
-        let mut shortest_range = usize::MAX;
-        for (block, ptr) in blocks.iter_mut().zip(base_ptrs.iter()) {
-            let num_processed = unsafe { ptr.offset_from(block.data().as_ptr()) } as usize;
-            block.set_num_processed(num_processed);
-            shortest_range = shortest_range.min(block.num_unprocessed());
+        unsafe {
+            copy_nonoverlapping(elem, stash.data[0].as_mut_ptr(), 1);
         }
-        rounds = shortest_range / num_swaps_per_round;
+
+        stash
+    }
+
+    #[allow(dead_code)]
+    fn swap(&mut self, elem: &mut T) {
+        let write_idx = (self.read_idx == 0) as usize;
+        unsafe {
+            copy_nonoverlapping(elem, self.data[write_idx].as_mut_ptr(), 1);
+            copy_nonoverlapping(self.data[self.read_idx].as_ptr(), elem as *mut T, 1);
+        }
+        self.read_idx = write_idx;
+    }
+
+    fn swap_assume_read_from<const N: usize>(&mut self, elem: &mut T) {
+        debug_assert_eq!(self.read_idx, N);
+        unsafe {
+            copy_nonoverlapping(elem, self.data[1 - N].as_mut_ptr(), 1);
+            copy_nonoverlapping(self.data[N].as_ptr(), elem as *mut T, 1);
+        }
+        self.read_idx = 1 - N;
+    }
+
+    fn deconstruct(self, elem: &mut T) {
+        unsafe {
+            copy_nonoverlapping(self.data[self.read_idx].as_ptr(), elem as *mut T, 1);
+        }
+    }
+}
+
+struct BlockBasePointers<T, const NUM_BLOCKS: usize> {
+    pointers: [*mut T; NUM_BLOCKS],
+    length_of_shortest_block: usize,
+}
+
+impl<T, const NUM_BLOCKS: usize> BlockBasePointers<T, NUM_BLOCKS> {
+    fn new(blocks: &mut Blocks<T, NUM_BLOCKS>) -> Self {
+        let mut pointers: [MaybeUninit<*mut T>; NUM_BLOCKS] =
+            unsafe { MaybeUninit::uninit().assume_init() };
+        let mut length_of_shortest_block = usize::MAX;
+
+        for (ptr, block) in pointers.iter_mut().zip(blocks.iter_mut()) {
+            ptr.write(block.data_unprocessed_mut().as_mut_ptr());
+            length_of_shortest_block = length_of_shortest_block.min(block.num_unprocessed());
+        }
+
+        Self {
+            pointers: unsafe { std::mem::transmute_copy(&ManuallyDrop::new(pointers)) },
+            length_of_shortest_block,
+        }
+    }
+
+    fn synchronize_blocks(&mut self, blocks: &mut Blocks<T, NUM_BLOCKS>) {
+        for (block, ptr) in blocks.iter_mut().zip(self.pointers.iter()) {
+            let num_processed = unsafe { ptr.offset_from(block.data().as_ptr()) } as usize;
+            assert!(num_processed <= block.len());
+            block.set_num_processed(num_processed);
+
+            self.length_of_shortest_block =
+                self.length_of_shortest_block.min(block.num_unprocessed());
+        }
+    }
+
+    fn length_of_shortest_block(&self) -> usize {
+        self.length_of_shortest_block
+    }
+
+    fn fetch_and_increment(&mut self, idx: usize) -> *mut T {
+        let result = self.pointers[idx];
+        self.pointers[idx] = unsafe { result.add(1) };
+        result
+    }
+
+    fn fetch_and_decrement(&mut self, idx: usize) -> *mut T {
+        let result = self.pointers[idx];
+        self.pointers[idx] = unsafe { result.sub(1) };
+        result
     }
 }
 
