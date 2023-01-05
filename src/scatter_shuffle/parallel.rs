@@ -8,27 +8,22 @@ use crate::rough_shuffle::*;
 use rand::Rng;
 use rand::SeedableRng;
 
-pub const LOG_NUM_BLOCKS: usize = 7;
-pub const NUM_BLOCKS: usize = 1 << LOG_NUM_BLOCKS;
-
 #[derive(Clone, Copy, Default)]
 struct DefaultConfiguration {}
 
-implement_seq_config!(DefaultConfiguration, fisher_yates, 1 << 16);
+implement_seq_config!(DefaultConfiguration, fisher_yates, 1 << 18);
 
 impl ParConfiguration for DefaultConfiguration {
     fn par_base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) {
-        sequential::scatter_shuffle_impl::<R, T, _, NUM_BLOCKS>(rng, data, self)
+        fisher_yates(rng, data)
     }
 
     fn par_base_case_size(&self) -> usize {
-        1 << 20
+        1 << 16
     }
 
     fn par_number_of_subproblems(&self, n: usize) -> usize {
-        (n / 2 / self.par_base_case_size())
-            .max(256)
-            .next_power_of_two()
+        (n / self.par_base_case_size()).clamp(1, 2040)
     }
 }
 
@@ -36,8 +31,21 @@ pub fn par_scatter_shuffle<R: Rng + SeedableRng + Send + Sync, T: Send + Sync + 
     rng: &mut R,
     data: &mut [T],
 ) {
-    let algo = ParScatterShuffleImpl::<R, T, DefaultConfiguration, NUM_BLOCKS>::default();
-    algo.shuffle(rng, data);
+    let num_bytes = data.len() * std::mem::size_of::<T>();
+
+    if num_bytes <= (1 << 23) {
+        return fisher_yates(rng, data);
+    }
+
+    if num_bytes < (1 << 27) {
+        const NUM_BLOCKS: usize = 64;
+        let algo = ParScatterShuffleImpl::<R, T, DefaultConfiguration, NUM_BLOCKS>::default();
+        algo.shuffle(rng, data);
+    } else {
+        const NUM_BLOCKS: usize = 256;
+        let algo = ParScatterShuffleImpl::<R, T, DefaultConfiguration, NUM_BLOCKS>::default();
+        algo.shuffle(rng, data);
+    }
 }
 
 pub struct ParScatterShuffleImpl<R, T, C, const NUM_BLOCKS: usize> {
@@ -77,7 +85,7 @@ where
     pub fn shuffle(&self, rng: &mut R, data: &mut [T]) {
         let n = data.len();
 
-        if n < self.config.par_base_case_size() {
+        if n <= self.config.par_base_case_size() {
             return self.config.par_base_case_shuffle(rng, data);
         }
 

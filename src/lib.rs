@@ -9,13 +9,15 @@ pub mod uniform_index;
 
 pub mod prelude {
     pub use super::fisher_yates::fisher_yates;
+    pub use super::rough_shuffle::{IsPowerOfTwo, NumberOfBlocks};
     pub use super::scatter_shuffle::parallel::par_scatter_shuffle;
     pub use super::scatter_shuffle::sequential::seq_scatter_shuffle;
+    pub use super::scatter_shuffle::{ParConfiguration, SeqConfiguration};
 }
 
 mod blocked;
 mod prefetch;
-mod rough_shuffle;
+pub mod rough_shuffle;
 
 #[cfg(test)]
 mod statistical_tests;

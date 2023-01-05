@@ -11,6 +11,7 @@ pub mod with_prefetch;
 #[cfg(feature = "unsafe_algos")]
 pub mod with_unsafe_algos;
 
+#[allow(unreachable_code)]
 pub fn fisher_yates<R: Rng, T>(rng: &mut R, data: &mut [T]) {
     #[cfg(feature = "prefetch")]
     #[cfg(feature = "unsafe_algos")]
@@ -19,8 +20,7 @@ pub fn fisher_yates<R: Rng, T>(rng: &mut R, data: &mut [T]) {
     }
 
     #[cfg(feature = "prefetch")]
-    with_prefetch::fisher_yates(rng, data);
+    return with_prefetch::fisher_yates(rng, data);
 
-    #[cfg(not(feature = "prefetch"))]
     naive::fisher_yates(rng, data);
 }
