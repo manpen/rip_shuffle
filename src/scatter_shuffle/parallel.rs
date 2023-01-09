@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use super::*;
 use crate::blocked::*;
-use crate::fisher_yates::fisher_yates;
+use crate::prelude::fisher_yates;
 use crate::rough_shuffle::*;
 
 use rand::Rng;
@@ -11,15 +11,15 @@ use rand::SeedableRng;
 #[derive(Clone, Copy, Default)]
 struct DefaultConfiguration {}
 
-implement_seq_config!(DefaultConfiguration, fisher_yates, 1 << 18);
+implement_seq_config!(DefaultConfiguration, fisher_yates, 1 << 16); // no relevant, as we do not use SeqScatterShuffle
 
 impl ParConfiguration for DefaultConfiguration {
     fn par_base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) {
-        fisher_yates(rng, data)
+        fisher_yates(rng, data);
     }
 
     fn par_base_case_size(&self) -> usize {
-        1 << 16
+        1 << 18
     }
 
     fn par_number_of_subproblems(&self, n: usize) -> usize {
@@ -90,7 +90,7 @@ where
         }
 
         let mut blocks = split_slice_into_blocks(data);
-        Self::rough_shuffle(rng, &mut blocks, self.config.par_number_of_subproblems(n));
+        Self::invoke_rough_shuffle(rng, &mut blocks, self.config.par_number_of_subproblems(n));
         let num_unprocessed =
             sequential::shuffle_stashes(rng, &mut blocks, |r: &mut R, d: &mut [T]| {
                 self.shuffle(r, d)
@@ -104,17 +104,23 @@ where
         }
     }
 
-    fn rough_shuffle(rng: &mut R, blocks: &mut Blocks<T, NUM_BLOCKS>, num_problems: usize) {
+    fn invoke_rough_shuffle(rng: &mut R, blocks: &mut Blocks<T, NUM_BLOCKS>, num_problems: usize) {
         if num_problems == 1 {
             return rough_shuffle(rng, blocks);
         }
 
-        let mut right_halves = split_each_block_in_half(blocks);
         let mut right_rng: R = seed_new_rng(rng);
+        let mut right_halves = split_each_block_in_half(blocks);
 
         rayon::join(
-            || Self::rough_shuffle(rng, blocks, num_problems / 2),
-            || Self::rough_shuffle(&mut right_rng, &mut right_halves, (num_problems + 1) / 2),
+            || Self::invoke_rough_shuffle(rng, blocks, num_problems / 2),
+            || {
+                Self::invoke_rough_shuffle(
+                    &mut right_rng,
+                    &mut right_halves,
+                    (num_problems + 1) / 2,
+                )
+            },
         );
 
         blocks

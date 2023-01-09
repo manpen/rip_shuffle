@@ -5,7 +5,7 @@ use rand::Rng;
 /// for large upper bounds and it's then typically faster to use
 /// [`impl_64::gen_index`] in these regimes. This constant gives
 /// the recommended size when to switch.
-pub const U32_MAX_UPPER_BOUND: u32 = u32::MAX / 256;
+pub const U32_MAX_UPPER_BOUND: u32 = u32::MAX / 16;
 
 /// Generates an index from the exclusive range `0..ub`
 /// uniformly at random. It is functionally equivalent to
@@ -34,45 +34,70 @@ pub fn gen_index(rng: &mut impl Rng, exclusive_ub: usize) -> usize {
 }
 
 macro_rules! impl_gen_index {
-    ($n : ident, $t : ty) => {
-        pub mod $n {
-            use super::*;
+    ( $t : ty) => {
+        use super::*;
 
-            #[inline]
-            pub fn gen_index(rng: &mut impl Rng, exclusive_ub: $t) -> $t {
-                let initial = rng.gen();
-                gen_index_impl(rng, initial, exclusive_ub)
+        #[inline]
+        pub fn gen_index(rng: &mut impl Rng, exclusive_ub: $t) -> $t {
+            let initial = rng.gen();
+            gen_index_impl(rng, initial, exclusive_ub)
+        }
+
+        #[inline]
+        pub fn gen_index_impl(rng: &mut impl Rng, initial: $t, exclusive_ub: $t) -> $t {
+            debug_assert!(exclusive_ub != 0);
+
+            let (mut lo, mut hi) = initial.widening_mul(exclusive_ub);
+
+            if lo >= exclusive_ub {
+                return hi;
             }
 
-            #[inline]
-            pub fn gen_index_impl(rng: &mut impl Rng, initial: $t, exclusive_ub: $t) -> $t {
-                debug_assert!(exclusive_ub != 0);
+            let t = exclusive_ub.wrapping_neg() % exclusive_ub;
 
-                let (lo, hi) = initial.widening_mul(exclusive_ub);
-
-                if lo >= exclusive_ub {
+            loop {
+                if lo >= t {
                     return hi;
                 }
 
-                let t = exclusive_ub.wrapping_neg() % exclusive_ub;
-                let mut lo = lo;
-                let mut hi = hi;
-
-                loop {
-                    if lo >= t {
-                        return hi;
-                    }
-
-                    let rand: $t = rng.gen();
-                    (lo, hi) = rand.widening_mul(exclusive_ub);
-                }
+                let rand: $t = rng.gen();
+                (lo, hi) = rand.widening_mul(exclusive_ub);
             }
         }
     };
 }
 
-impl_gen_index!(impl_u32, u32);
-impl_gen_index!(impl_u64, u64);
+pub mod impl_u16 {
+    impl_gen_index!(u16);
+}
+
+pub mod impl_u32 {
+    impl_gen_index!(u32);
+
+    #[inline]
+    pub fn gen_index_pair(rng: &mut impl Rng, exclusive_ub: (u32, u32)) -> (u32, u32) {
+        let rand: u64 = rng.gen();
+
+        let r0 = rand as u32;
+        let r1 = (rand >> 32) as u32;
+
+        let (lo0, hi0) = r0.widening_mul(exclusive_ub.0);
+        let (lo1, hi1) = r1.widening_mul(exclusive_ub.1);
+
+        if (lo0 < exclusive_ub.0) | (lo1 < exclusive_ub.1) {
+            (
+                gen_index_impl(rng, r0, exclusive_ub.0),
+                gen_index_impl(rng, r1, exclusive_ub.1),
+            )
+        } else {
+            (hi0, hi1)
+        }
+    }
+}
+
+pub mod impl_u64 {
+    impl_gen_index!(u64);
+}
 
 #[cfg(test)]
 mod test {

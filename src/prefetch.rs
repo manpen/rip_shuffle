@@ -4,6 +4,7 @@
 pub mod avail {
     pub const SUPPORTED: bool = true;
 
+    #[inline(always)]
     pub fn prefetch_write_data<T>(item: &mut T) {
         unsafe {
             std::intrinsics::prefetch_write_data(item as *mut T, 1);
