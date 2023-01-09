@@ -1,6 +1,7 @@
 #![feature(bigint_helper_methods)]
 #![feature(core_intrinsics)]
 #![feature(slice_swap_unchecked)]
+#![feature(slice_split_at_unchecked)]
 
 pub mod fisher_yates;
 pub mod random_bits;

@@ -8,6 +8,9 @@ pub(crate) mod noncontiguous;
 pub mod with_prefetch;
 
 #[cfg(feature = "prefetch")]
+pub mod with_prefetch_alt;
+
+#[cfg(feature = "prefetch")]
 #[cfg(feature = "unsafe_algos")]
 pub mod with_unsafe_algos;
 
