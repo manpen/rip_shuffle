@@ -4,43 +4,43 @@ use crate::random_bits::RandomBitsSource;
 pub(super) fn rough_shuffle<
     R: Rng,
     T,
-    const LOG_NUM_BLOCKS: usize,
-    const NUM_BLOCKS: usize,
+    const LOG_NUM_BUCKETS: usize,
+    const NUM_BUCKETS: usize,
     const _SWAPS_PER_ROUND: usize,
 >(
     rng: &mut R,
-    blocks: &mut Blocks<T, NUM_BLOCKS>,
+    buckets: &mut Buckets<T, NUM_BUCKETS>,
 ) {
-    if blocks.iter().any(|blk| blk.is_fully_processed()) {
+    if buckets.iter().any(|blk| blk.is_fully_processed()) {
         return;
     }
 
-    assert_eq!(1 << LOG_NUM_BLOCKS, NUM_BLOCKS);
+    assert_eq!(1 << LOG_NUM_BUCKETS, NUM_BUCKETS);
 
-    rough_shuffle_impl::<R, T, LOG_NUM_BLOCKS, NUM_BLOCKS>(rng, blocks);
+    rough_shuffle_impl::<R, T, LOG_NUM_BUCKETS, NUM_BUCKETS>(rng, buckets);
 }
 
-fn rough_shuffle_impl<R: Rng, T, const LOG_NUM_BLOCKS: usize, const NUM_BLOCKS: usize>(
+fn rough_shuffle_impl<R: Rng, T, const LOG_NUM_BUCKETS: usize, const NUM_BUCKETS: usize>(
     rng: &mut R,
-    blocks: &mut Blocks<T, NUM_BLOCKS>,
+    buckets: &mut Buckets<T, NUM_BUCKETS>,
 ) -> Option<()> {
     let mut rbs = RandomBitsSource::new();
-    let (active_block, partners) = blocks.as_mut_slice().split_first_mut().unwrap();
+    let (active_bucket, partners) = buckets.as_mut_slice().split_first_mut().unwrap();
 
-    let mut active_element = active_block.first_unprocessed().unwrap();
+    let mut active_element = active_bucket.first_unprocessed().unwrap();
 
     loop {
-        let partner_block_idx = rbs.gen_const_bits::<LOG_NUM_BLOCKS>(rng) as usize;
+        let partner_bucket_idx = rbs.gen_const_bits::<LOG_NUM_BUCKETS>(rng) as usize;
 
-        if let Some(partner_block) = partners.get_mut(partner_block_idx) {
-            let partner_element = partner_block.first_unprocessed().unwrap();
+        if let Some(partner_bucket) = partners.get_mut(partner_bucket_idx) {
+            let partner_element = partner_bucket.first_unprocessed().unwrap();
 
             std::mem::swap(active_element, partner_element);
 
-            partner_block.process_element()?;
+            partner_bucket.process_element()?;
         } else {
-            assert_eq!(partner_block_idx, NUM_BLOCKS - 1);
-            active_element = active_block.process_element()?;
+            assert_eq!(partner_bucket_idx, NUM_BUCKETS - 1);
+            active_element = active_bucket.process_element()?;
         }
     }
 }

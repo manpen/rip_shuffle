@@ -4,13 +4,13 @@ macro_rules! rough_shuffle_single_test {
     ($name : ident, $func : ident, $log_n : expr) => {
         mod $name {
             use super::*;
-            use crate::blocked::*;
+            use crate::bucketing::*;
             use itertools::Itertools;
             use rand::{Rng, SeedableRng};
             use rand_pcg::Pcg64Mcg;
 
-            const LOG_NUM_BLOCKS: usize = $log_n;
-            const NUM_BLOCKS: usize = 1 << LOG_NUM_BLOCKS;
+            const LOG_NUM_BUCKETS: usize = $log_n;
+            const NUM_BUCKETS: usize = 1 << LOG_NUM_BUCKETS;
             const SWAPS_PER_ROUND: usize = 64 / $log_n;
             type R = Pcg64Mcg;
             type T = usize;
@@ -18,12 +18,12 @@ macro_rules! rough_shuffle_single_test {
             #[test]
             #[ignore]
             fn uniformity() {
-                let mut rng = R::seed_from_u64(0x9654_3723_3489 + 23423 * NUM_BLOCKS as u64);
+                let mut rng = R::seed_from_u64(0x9654_3723_3489 + 23423 * NUM_BUCKETS as u64);
                 for n in [10, 20, 30, 40] {
-                    test_rough_shuffle_impl::<LOG_NUM_BLOCKS, NUM_BLOCKS>(
+                    test_rough_shuffle_impl::<LOG_NUM_BUCKETS, NUM_BUCKETS>(
                         &mut rng,
-                        n * NUM_BLOCKS,
-                        10_000 * NUM_BLOCKS as u64,
+                        n * NUM_BUCKETS,
+                        10_000 * NUM_BUCKETS as u64,
                     );
                 }
             }
@@ -35,16 +35,16 @@ macro_rules! rough_shuffle_single_test {
                     let mut data: Vec<usize> = (0..n).into_iter().collect();
 
                     {
-                        let mut blocks =
-                            split_slice_into_blocks::<usize, NUM_BLOCKS>(&mut data);
+                        let mut buckets =
+                        split_slice_into_equally_sized_buckets::<usize, NUM_BUCKETS>(&mut data);
 
-                        $func :: <R, T, LOG_NUM_BLOCKS, NUM_BLOCKS, SWAPS_PER_ROUND>(
+                        $func :: <R, T, LOG_NUM_BUCKETS, NUM_BUCKETS, SWAPS_PER_ROUND>(
                             &mut rng,
-                            &mut blocks,
+                            &mut buckets,
                         );
 
                         if rng.gen_bool(0.25) {
-                            compact_into_single_block(blocks);
+                            compact_into_single_bucket(buckets);
                         }
                     }
 
@@ -54,39 +54,39 @@ macro_rules! rough_shuffle_single_test {
                 }
             }
 
-            fn test_rough_shuffle_impl<const LOG_NUM_BLOCKS: usize, const NUM_BLOCKS: usize>(
+            fn test_rough_shuffle_impl<const LOG_NUM_BUCKETS: usize, const NUM_BUCKETS: usize>(
                 rng: &mut impl Rng,
                 num_elem: usize,
                 num_iter: u64,
             ) {
-                let num_min_processed = num_elem / NUM_BLOCKS - 1;
+                let num_min_processed = num_elem / NUM_BUCKETS - 1;
 
                 let mut data = vec![0; num_elem];
 
-                let mut counts = vec![vec![0u64; num_min_processed]; NUM_BLOCKS];
+                let mut counts = vec![vec![0u64; num_min_processed]; NUM_BUCKETS];
 
-                let mut block_sizes = vec![0; NUM_BLOCKS];
+                let mut bucket_sizes = vec![0; NUM_BUCKETS];
 
                 for _ in 0..num_iter {
-                    let mut blocks = split_slice_into_blocks::<usize, NUM_BLOCKS>(&mut data);
-                    for (block_idx, block) in blocks.iter_mut().enumerate() {
-                        block.data_mut().fill(block_idx);
-                        block_sizes[block_idx] = block.len();
+                    let mut buckets = split_slice_into_equally_sized_buckets::<usize, NUM_BUCKETS>(&mut data);
+                    for (bucket_idx, bucket) in buckets.iter_mut().enumerate() {
+                        bucket.data_mut().fill(bucket_idx);
+                        bucket_sizes[bucket_idx] = bucket.len();
                     }
 
-                    $func::<_, _, LOG_NUM_BLOCKS, NUM_BLOCKS, SWAPS_PER_ROUND>(rng, &mut blocks);
+                    $func::<_, _, LOG_NUM_BUCKETS, NUM_BUCKETS, SWAPS_PER_ROUND>(rng, &mut buckets);
 
-                    let compact = compact_into_single_block(blocks);
+                    let compact = compact_into_single_bucket(buckets);
 
                     assert!(compact.num_processed() >= num_min_processed);
 
-                    for (idx, &origin_block) in compact
+                    for (idx, &origin_bucket) in compact
                         .data_processed()
                         .iter()
                         .enumerate()
                         .take(num_min_processed)
                     {
-                        counts[origin_block][idx] += 1;
+                        counts[origin_bucket][idx] += 1;
                     }
                 }
 
@@ -102,7 +102,7 @@ macro_rules! rough_shuffle_single_test {
                 let nice_counts = (0..num_min_processed)
                     .into_iter()
                     .map(|pos| {
-                        (0..NUM_BLOCKS)
+                        (0..NUM_BUCKETS)
                             .into_iter()
                             .map(|o| format!("{:>7}", counts[o][pos]))
                             .join(" ")
@@ -119,13 +119,13 @@ macro_rules! rough_shuffle_single_test {
                     for (idx, &count) in origin.iter().enumerate() {
                         let p_value = compute_binomial_p_value(
                             num_iter,
-                            block_sizes[origin_idx] as f64 / num_elem as f64,
+                            bucket_sizes[origin_idx] as f64 / num_elem as f64,
                             count,
                         );
                         assert!(
                             p_value >= corrected_significance,
-                            "origin_idx: {origin_idx} idx: {idx} of {num_elem} count: {count} \np_value: {p_value} corrected_sig: {corrected_significance} \nblock sizes: {:?}\n{nice_counts}\n+----\n{nice_sums}",
-                            &block_sizes
+                            "origin_idx: {origin_idx} idx: {idx} of {num_elem} count: {count} \np_value: {p_value} corrected_sig: {corrected_significance} \nbucket sizes: {:?}\n{nice_counts}\n+----\n{nice_sums}",
+                            &bucket_sizes
                         );
                     }
                 }
@@ -155,10 +155,10 @@ macro_rules! rough_shuffle_single_test {
 macro_rules! rough_shuffle_tests {
     ($func : ident) => {
         use crate::rough_shuffle::common_tests::rough_shuffle_single_test;
-        rough_shuffle_single_test!(test_2blocks, $func, 1);
-        rough_shuffle_single_test!(test_4blocks, $func, 2);
-        rough_shuffle_single_test!(test_8blocks, $func, 3);
-        rough_shuffle_single_test!(test_16blocks, $func, 4);
+        rough_shuffle_single_test!(test_2buckets, $func, 1);
+        rough_shuffle_single_test!(test_4buckets, $func, 2);
+        rough_shuffle_single_test!(test_8buckets, $func, 3);
+        rough_shuffle_single_test!(test_16buckets, $func, 4);
     };
 }
 

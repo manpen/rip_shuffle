@@ -1,4 +1,4 @@
-use super::blocked::*;
+use super::bucketing::*;
 use rand::Rng;
 
 #[cfg(test)]
@@ -9,7 +9,7 @@ mod naive;
 #[cfg(feature = "unsafe_algos")]
 pub mod with_unsafe_algos;
 
-pub struct NumberOfBlocks<const N: usize> {}
+pub struct NumberOfBuckets<const N: usize> {}
 
 pub trait IsPowerOfTwo {
     const N: usize;
@@ -18,7 +18,7 @@ pub trait IsPowerOfTwo {
 
 macro_rules! impl_index_bits_trait {
     ($log_n : expr, $n : expr) => {
-        impl IsPowerOfTwo for NumberOfBlocks<$n> {
+        impl IsPowerOfTwo for NumberOfBuckets<$n> {
             const N: usize = $n;
             const LOG2: usize = $log_n;
         }
@@ -39,9 +39,9 @@ impl_index_bits_trait!(8);
 impl_index_bits_trait!(9);
 impl_index_bits_trait!(10);
 
-pub fn rough_shuffle<R: Rng, T, const N: usize>(rng: &mut R, blocks: &mut Blocks<T, N>)
+pub fn rough_shuffle<R: Rng, T, const N: usize>(rng: &mut R, buckets: &mut Buckets<T, N>)
 where
-    NumberOfBlocks<N>: IsPowerOfTwo,
+    NumberOfBuckets<N>: IsPowerOfTwo,
 {
     macro_rules! entry {
         ($log_n : literal) => {{
@@ -49,10 +49,10 @@ where
             const SWAPS_PER_ROUND: usize = 64 / $log_n;
 
             #[cfg(feature = "unsafe_algos")]
-            with_unsafe_algos::rough_shuffle::<R, T, LOG_N, N, SWAPS_PER_ROUND>(rng, blocks);
+            with_unsafe_algos::rough_shuffle::<R, T, LOG_N, N, SWAPS_PER_ROUND>(rng, buckets);
 
             // the unsafe algo may terminate early. then the naive algo takes over.
-            naive::rough_shuffle::<R, T, LOG_N, N, SWAPS_PER_ROUND>(rng, blocks);
+            naive::rough_shuffle::<R, T, LOG_N, N, SWAPS_PER_ROUND>(rng, buckets);
         }};
     }
 
