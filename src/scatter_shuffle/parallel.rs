@@ -96,7 +96,7 @@ where
                 self.shuffle(r, d)
             });
 
-        let target_lengths = sequential::draw_target_lengths(rng, num_unprocessed, &buckets);
+        let target_lengths = sequential::sample_final_bucket_size(rng, num_unprocessed, &buckets);
         sequential::move_buckets_to_fit_target_len(&mut buckets, &target_lengths);
 
         if !self.config.par_disable_recursion() {
@@ -164,6 +164,8 @@ pub fn seed_new_rng<RIn: Rng, ROut: SeedableRng>(base: &mut RIn) -> ROut {
 
 #[cfg(test)]
 mod integration_test {
+    use crate::scatter_shuffle::sequential::SeqScatterShuffleImpl;
+
     use super::*;
 
     const NUM_BUCKETS: usize = 4;
@@ -175,7 +177,7 @@ mod integration_test {
 
     impl ParConfiguration for TestConfiguration {
         fn par_base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) {
-            sequential::scatter_shuffle_impl::<R, T, _, NUM_BUCKETS>(rng, data, self)
+            SeqScatterShuffleImpl::<R, T, _, NUM_BUCKETS>::new(*self).shuffle(rng, data)
         }
 
         fn par_base_case_size(&self) -> usize {

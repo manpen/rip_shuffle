@@ -1,3 +1,6 @@
+use std::default::Default;
+use std::marker::PhantomData;
+
 use super::*;
 use crate::bucketing::slicing::Slicing;
 use crate::bucketing::*;
@@ -18,37 +21,65 @@ struct DefaultConfiguration {}
 implement_seq_config!(DefaultConfiguration, fisher_yates, 1 << 19);
 
 pub fn seq_scatter_shuffle<R: Rng, T>(rng: &mut R, data: &mut [T]) {
-    scatter_shuffle_impl::<R, T, _, NUM_BUCKETS>(rng, data, &DefaultConfiguration::default())
+    SeqScatterShuffleImpl::<R, T, DefaultConfiguration, NUM_BUCKETS>::default().shuffle(rng, data)
 }
 
-pub fn scatter_shuffle_impl<R, T, C: SeqConfiguration, const NUM_BUCKETS: usize>(
-    rng: &mut R,
-    data: &mut [T],
-    config: &C,
-) where
+pub struct SeqScatterShuffleImpl<R, T, C, const NUM_BUCKETS: usize> {
+    config: C,
+    _phantom_r: PhantomData<R>,
+    _phantom_t: PhantomData<T>,
+}
+
+impl<R, T, C, const NUM_BUCKETS: usize> Default for SeqScatterShuffleImpl<R, T, C, NUM_BUCKETS>
+where
+    C: Default,
+{
+    fn default() -> Self {
+        Self {
+            config: Default::default(),
+            _phantom_r: Default::default(),
+            _phantom_t: Default::default(),
+        }
+    }
+}
+
+impl<R, T, C, const NUM_BUCKETS: usize> SeqScatterShuffleImpl<R, T, C, NUM_BUCKETS>
+where
     R: Rng,
     T: Sized,
+    C: SeqConfiguration,
     NumberOfBuckets<NUM_BUCKETS>: IsPowerOfTwo,
 {
-    if data.len() <= config.seq_base_case_size() {
-        return config.seq_base_case_shuffle(rng, data);
+    pub fn new(config: C) -> Self {
+        Self {
+            config,
+            _phantom_r: Default::default(),
+            _phantom_t: Default::default(),
+        }
     }
 
-    let recurse = |rng: &mut R, data: &mut [T]| {
-        scatter_shuffle_impl::<R, T, C, NUM_BUCKETS>(rng, data, config)
-    };
+    pub fn shuffle(&self, rng: &mut R, data: &mut [T]) {
+        if data.len() <= self.config.seq_base_case_size() {
+            return self.config.seq_base_case_shuffle(rng, data);
+        }
 
-    let mut buckets = split_slice_into_equally_sized_buckets(data);
+        let mut buckets = split_slice_into_equally_sized_buckets(data);
 
-    rough_shuffle(rng, &mut buckets);
+        rough_shuffle(rng, &mut buckets);
 
-    let num_unprocessed = shuffle_stashes(rng, &mut buckets, recurse);
-    let target_lengths = draw_target_lengths(rng, num_unprocessed, &buckets);
-    move_buckets_to_fit_target_len(&mut buckets, &target_lengths);
+        let num_unprocessed = buckets.iter().map(|b| b.num_unprocessed()).sum();
 
-    if !config.seq_disable_recursion() {
-        for bucket in &mut buckets {
-            recurse(rng, bucket.data_mut());
+        let target_lengths = sample_final_bucket_size(rng, num_unprocessed, &buckets);
+        move_buckets_to_fit_target_len(&mut buckets, &target_lengths);
+
+        shuffle_stashes(rng, &mut buckets, |rng: &mut R, data: &mut [T]| {
+            self.shuffle(rng, data)
+        });
+
+        if !self.config.seq_disable_recursion() {
+            for bucket in &mut buckets {
+                self.shuffle(rng, bucket.data_mut());
+            }
         }
     }
 }
@@ -191,7 +222,7 @@ fn shrink_sweep_to_left<T, const NUM_BUCKETS: usize>(
     }
 }
 
-pub fn draw_target_lengths<R: Rng, T, const NUM_BUCKETS: usize>(
+pub fn sample_final_bucket_size<R: Rng, T, const NUM_BUCKETS: usize>(
     rng: &mut R,
     num_unprocessed: usize,
     buckets: &Buckets<T, NUM_BUCKETS>,
@@ -256,7 +287,7 @@ mod test {
                     let buckets = generate_random_buckets::<NUM_BUCKETS>(rng, &mut data);
                     let num_unprocessed = buckets.iter().map(|blk| blk.num_unprocessed()).sum();
                     let target_lengths: [usize; NUM_BUCKETS] =
-                        draw_target_lengths(rng, num_unprocessed, &buckets);
+                        sample_final_bucket_size(rng, num_unprocessed, &buckets);
 
                     $func(rng, buckets, target_lengths);
                 }
@@ -288,7 +319,7 @@ mod test {
             }
 
             let target_lengths: [usize; NUM_BUCKETS] =
-                super::draw_target_lengths(rng, num_unprocessed, &buckets);
+                super::sample_final_bucket_size(rng, num_unprocessed, &buckets);
 
             assert!(buckets
                 .iter()
@@ -480,7 +511,8 @@ mod integration_test {
         struct TestConfiguration {}
         implement_seq_config!(TestConfiguration, fisher_yates, NUM_BUCKETS * 4);
 
-        scatter_shuffle_impl::<R, T, _, NUM_BUCKETS>(rng, data, &TestConfiguration::default())
+        SeqScatterShuffleImpl::<R, T, _, NUM_BUCKETS>::new(TestConfiguration::default())
+            .shuffle(rng, data)
     }
 
     crate::statistical_tests::test_shuffle_algorithm!(inplace_scatter_shuffle_test);
