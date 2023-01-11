@@ -152,52 +152,29 @@ pub fn move_buckets_to_fit_target_len<T, const NUM_BUCKETS: usize>(
         .all(|(blk, &target)| blk.len() == target));
 }
 
-fn get_ith_entry_and_right_neighbor<'a, 'b, T, const NUM_BUCKETS: usize>(
-    buckets: &'a mut Buckets<'b, T, NUM_BUCKETS>,
-    i: usize,
-) -> (&'a mut Bucket<'b, T>, &'a mut Bucket<'b, T>) {
-    let (l, r) = buckets.split_at_mut(i);
-    (l.last_mut().unwrap(), r.first_mut().unwrap())
-}
-
 fn shrink_sweep_to_right<T, const NUM_BUCKETS: usize>(
     buckets: &mut Buckets<T, NUM_BUCKETS>,
     target_lengths: &[usize; NUM_BUCKETS],
 ) {
-    // the i-th element holds the number of items the i-th bucket needs to grow to match it's target_length
-    let growth_required_iter = buckets
-        .iter()
-        .zip(target_lengths)
-        .map(|(blk, &target)| target as isize - blk.len() as isize);
-
     // compute exclusive prefix sum of the iterator above
-    let growth_needed_left: ArrayVec<isize, NUM_BUCKETS> = growth_required_iter
-        .scan(0isize, |state, s| {
-            let old = *state;
-            *state += s;
-            Some(old)
-        })
-        .collect();
+    let mut growth_needed_left = 0;
 
-    for (i, (&target_length, growth_needed_left)) in
-        target_lengths.iter().zip(growth_needed_left).enumerate()
-    {
-        // give to left if this bucket is too large and left needs some
-        if buckets[i].len() > target_length && growth_needed_left > 0 {
-            let shrink_by_atmost = buckets[i].len() - target_length;
-            let num_to_move = shrink_by_atmost.min(growth_needed_left as usize);
+    let mut buckets = buckets.as_mut_slice();
 
-            let (left_neighbor, this_bucket) = get_ith_entry_and_right_neighbor(buckets, i);
-            left_neighbor.grow_from_right(this_bucket, num_to_move);
+    for &target_length in &target_lengths[0..NUM_BUCKETS - 1] {
+        let this_bucket;
+        (this_bucket, buckets) = buckets.split_first_mut().unwrap();
+
+        let reservation_for_left = growth_needed_left.max(0) as usize;
+        let target_with_reservation = target_length + reservation_for_left;
+
+        if this_bucket.len() > target_with_reservation {
+            let num_to_move = this_bucket.len() - target_with_reservation;
+
+            this_bucket.shrink_to_right(buckets.first_mut().unwrap(), num_to_move);
         }
 
-        // give to right if this bucket is still too large
-        if buckets[i].len() > target_length {
-            let num_to_move = buckets[i].len() - target_length;
-
-            let (this_bucket, right_neighbor) = get_ith_entry_and_right_neighbor(buckets, i + 1);
-            this_bucket.shrink_to_right(right_neighbor, num_to_move);
-        }
+        growth_needed_left += target_length as isize - this_bucket.len() as isize;
     }
 }
 
