@@ -1,91 +1,91 @@
 #![allow(clippy::needless_range_loop)]
 
 use std::{
+    marker::PhantomData,
     mem::{ManuallyDrop, MaybeUninit},
     ptr::copy_nonoverlapping,
 };
 
+use super::*;
 use crate::prefetch::*;
 
-use super::*;
-
-pub(super) fn rough_shuffle<
-    R: Rng,
-    T,
-    const LOG_NUM_BUCKETS: usize,
-    const NUM_BUCKETS: usize,
-    const SWAPS_PER_ROUND: usize,
->(
+pub(super) fn rough_shuffle<R: Rng, T, const LOG_N: usize, const N: usize, const SWAPS: usize>(
     rng: &mut R,
-    buckets: &mut Buckets<T, NUM_BUCKETS>,
+    buckets: &mut Buckets<T, N>,
 ) {
-    let mut first_unprocessed_in_bucket = BlockBasePointers::new(buckets);
-
-    loop {
-        let rounds = first_unprocessed_in_bucket.length_of_shortest_bucket() / 2 / SWAPS_PER_ROUND;
-        if rounds <= 1 {
-            break;
-        }
-
-        let seed_for_stash: *mut T = first_unprocessed_in_bucket.fetch_and_increment(0);
-        let mut stash = Stash::new(unsafe { &mut *seed_for_stash });
-
-        for _ in 0..rounds {
-            let pointers_to_swap0 = prefetch::<_, _, LOG_NUM_BUCKETS, NUM_BUCKETS, SWAPS_PER_ROUND>(
-                rng,
-                &mut first_unprocessed_in_bucket,
-            );
-            let pointers_to_swap1 = prefetch::<_, _, LOG_NUM_BUCKETS, NUM_BUCKETS, SWAPS_PER_ROUND>(
-                rng,
-                &mut first_unprocessed_in_bucket,
-            );
-
-            // since we execute two swaps per iteration, we're always sure that the first
-            // swap will be with the first stash lane
-            for k in 0..SWAPS_PER_ROUND {
-                stash.swap_assume_read_from::<0>(unsafe { &mut *pointers_to_swap0[k] });
-                stash.swap_assume_read_from::<1>(unsafe { &mut *pointers_to_swap1[k] });
-            }
-        }
-
-        unsafe {
-            let current_base = first_unprocessed_in_bucket.fetch_and_decrement(0);
-            copy_nonoverlapping(current_base, seed_for_stash, 1);
-            stash.deconstruct(&mut *current_base);
-        }
-
-        first_unprocessed_in_bucket.synchronize_buckets(buckets);
-    }
+    RoughShuffle::<R, T, LOG_N, N, SWAPS>::new(buckets).rough_shuffle(rng)
 }
 
-fn prefetch<
-    R: Rng,
-    T,
-    const LOG_NUM_BUCKETS: usize,
-    const NUM_BUCKETS: usize,
-    const SWAPS_PER_ROUND: usize,
->(
-    rng: &mut R,
-    first_unprocessed_in_bucket: &mut BlockBasePointers<T, NUM_BUCKETS>,
-) -> [*mut T; SWAPS_PER_ROUND] {
-    let mask = (1usize << LOG_NUM_BUCKETS) - 1;
-    let rand: u64 = rng.gen();
+pub struct RoughShuffle<'a, 'b, R, T, const LOG_N: usize, const N: usize, const SWAPS: usize> {
+    buckets: &'a mut Buckets<'b, T, N>,
+    first_staged: BlockBasePointers<T, N>,
+    _phantom_r: PhantomData<R>,
+}
 
-    let mut buffer: [MaybeUninit<*mut T>; SWAPS_PER_ROUND] =
-        unsafe { MaybeUninit::uninit().assume_init() };
-
-    // compute and prefetch indices
-    for k in 0..SWAPS_PER_ROUND {
-        let index = (rand >> (k * LOG_NUM_BUCKETS)) as usize & mask;
-
-        let target_ptr = first_unprocessed_in_bucket.fetch_and_increment(index);
-
-        prefetch_write_data(unsafe { &mut *target_ptr });
-
-        buffer[k].write(target_ptr);
+impl<'a, 'b, R: Rng, T, const LOG_N: usize, const N: usize, const SWAPS: usize>
+    RoughShuffle<'a, 'b, R, T, LOG_N, N, SWAPS>
+{
+    fn new(buckets: &'a mut Buckets<'b, T, N>) -> Self {
+        let first_staged = BlockBasePointers::new(buckets);
+        Self {
+            buckets,
+            first_staged,
+            _phantom_r: Default::default(),
+        }
     }
 
-    unsafe { std::mem::transmute_copy(&ManuallyDrop::new(buffer)) }
+    fn rough_shuffle(&mut self, rng: &mut R) {
+        loop {
+            let rounds = self.first_staged.length_of_shortest_bucket() / 2 / SWAPS;
+            if rounds <= 1 {
+                break;
+            }
+
+            let seed_for_stash: *mut T = self.first_staged.fetch_and_increment(0);
+            let mut stash = Stash::new(unsafe { &mut *seed_for_stash });
+
+            for _ in 0..rounds {
+                let pointers_to_swap0 = self.prefetch(rng);
+                let pointers_to_swap1 = self.prefetch(rng);
+
+                // since we execute two swaps per iteration, we're always sure that the first
+                // swap will be with the first stash lane
+                for k in 0..SWAPS {
+                    stash.swap_assume_read_from::<0>(unsafe { &mut *pointers_to_swap0[k] });
+                    stash.swap_assume_read_from::<1>(unsafe { &mut *pointers_to_swap1[k] });
+                }
+            }
+
+            unsafe {
+                let current_base = self.first_staged.fetch_and_decrement(0);
+                copy_nonoverlapping(current_base, seed_for_stash, 1);
+                stash.deconstruct(&mut *current_base);
+            }
+
+            self.first_staged.synchronize_buckets(&mut self.buckets);
+        }
+    }
+
+    fn prefetch(&mut self, rng: &mut R) -> [*mut T; SWAPS] {
+        let mask = (1usize << LOG_N) - 1;
+        let rand: u64 = rng.gen();
+
+        let mut buffer: [MaybeUninit<*mut T>; SWAPS] =
+            unsafe { MaybeUninit::uninit().assume_init() };
+
+        // compute and prefetch indices
+        for k in 0..SWAPS {
+            let index = (rand >> (k * LOG_N)) as usize & mask;
+
+            let target_ptr = self.first_staged.fetch_and_increment(index);
+
+            prefetch_write_data(unsafe { &mut *target_ptr });
+
+            buffer[k].write(target_ptr);
+        }
+
+        unsafe { std::mem::transmute_copy(&ManuallyDrop::new(buffer)) }
+    }
 }
 
 struct Stash<T> {
