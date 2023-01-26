@@ -21,7 +21,8 @@ struct DefaultConfiguration {}
 implement_seq_config!(DefaultConfiguration, fisher_yates, 1 << 19);
 
 pub fn seq_scatter_shuffle<R: Rng, T>(rng: &mut R, data: &mut [T]) {
-    SeqScatterShuffleImpl::<R, T, DefaultConfiguration, NUM_BUCKETS>::default().shuffle(rng, data)
+    SeqScatterShuffleImpl::<R, T, DefaultConfiguration, NUM_BUCKETS>::default()
+        .shuffle_adaptive(rng, data)
 }
 
 pub struct SeqScatterShuffleImpl<R, T, C, const NUM_BUCKETS: usize> {
@@ -58,6 +59,41 @@ where
         }
     }
 
+    pub fn shuffle_adaptive(&self, rng: &mut R, data: &mut [T]) {
+        let num_buckets = data.len() / self.config.seq_base_case_size() * 2;
+
+        if num_buckets <= 2 {
+            return self.config.seq_base_case_shuffle(rng, data);
+        }
+
+        if num_buckets >= NUM_BUCKETS {
+            return self.shuffle(rng, data);
+        }
+
+        let log_num_buckets = num_buckets.ilog2();
+
+        macro_rules! call {
+            ($log_n : expr) => {
+                SeqScatterShuffleImpl::<R, T, C, { 1 << $log_n }>::new(self.config.clone())
+                    .shuffle(rng, data)
+            };
+        }
+
+        match log_num_buckets {
+            1 => call!(1),
+            2 => call!(2),
+            3 => call!(3),
+            4 => call!(4),
+            5 => call!(5),
+            6 => call!(6),
+            7 => call!(7),
+            8 => call!(8),
+            9 => call!(9),
+            10 => call!(10),
+            _ => self.shuffle(rng, data),
+        }
+    }
+
     pub fn shuffle(&self, rng: &mut R, data: &mut [T]) {
         if data.len() <= self.config.seq_base_case_size() {
             return self.config.seq_base_case_shuffle(rng, data);
@@ -73,12 +109,12 @@ where
         move_buckets_to_fit_target_len(&mut buckets, &target_lengths);
 
         shuffle_stashes(rng, &mut buckets, |rng: &mut R, data: &mut [T]| {
-            self.shuffle(rng, data)
+            self.shuffle_adaptive(rng, data)
         });
 
         if !self.config.seq_disable_recursion() {
             for bucket in &mut buckets {
-                self.shuffle(rng, bucket.data_mut());
+                self.shuffle_adaptive(rng, bucket.data_mut());
             }
         }
     }
