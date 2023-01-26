@@ -67,6 +67,6 @@ where
         256 => entry!(8),
         512 => entry!(9),
         1024 => entry!(10),
-        _ => panic!(), // cannot be reached due to the PoT type check
+        _ => panic!(), // cannot be reached due to IsPowerOfTwo trait bounds
     }
 }

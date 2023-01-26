@@ -3,7 +3,7 @@ use rand::Rng;
 pub mod parallel;
 pub mod sequential;
 
-pub trait SeqConfiguration {
+pub trait SeqConfiguration: Clone {
     fn seq_base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]);
     fn seq_base_case_size(&self) -> usize;
     fn seq_disable_recursion(&self) -> bool {
@@ -18,8 +18,24 @@ pub trait ParConfiguration: Send + Sync + SeqConfiguration {
     fn par_disable_recursion(&self) -> bool {
         false
     }
+
+    type Profiler: Profiler;
+    fn get_profiler(&self) -> &Self::Profiler;
 }
 
+#[macro_export]
+macro_rules! implement_no_profiler {
+    () => {
+        type Profiler = $crate::profiler::no_profiler::NoProfiler;
+        fn get_profiler(&self) -> &Self::Profiler {
+            &$crate::profiler::no_profiler::NoProfiler {}
+        }
+    };
+}
+
+pub use implement_no_profiler;
+
+#[macro_export]
 macro_rules! implement_seq_config {
     ($config : ty, $base_algo : path, $size : expr) => {
         impl SeqConfiguration for $config {
@@ -34,4 +50,6 @@ macro_rules! implement_seq_config {
     };
 }
 
-pub(crate) use implement_seq_config;
+pub use implement_seq_config;
+
+use crate::profiler::Profiler;

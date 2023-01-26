@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use super::*;
 use crate::bucketing::*;
 use crate::prelude::fisher_yates;
+use crate::profiler::ProfilerFrame;
 use crate::rough_shuffle::*;
 
 use rand::Rng;
@@ -25,6 +26,8 @@ impl ParConfiguration for DefaultConfiguration {
     fn par_number_of_subproblems(&self, n: usize) -> usize {
         (n / self.par_base_case_size()).clamp(1, 2040)
     }
+
+    implement_no_profiler!();
 }
 
 pub fn par_scatter_shuffle<R: Rng + SeedableRng + Send + Sync, T: Send + Sync + Sized>(
@@ -89,15 +92,25 @@ where
             return self.config.par_base_case_shuffle(rng, data);
         }
 
+        let mut profiler = self.config.get_profiler().start("ParScatter");
+
+        profiler.new_region("RoughScatter");
         let mut buckets = split_slice_into_equally_sized_buckets(data);
         Self::invoke_rough_shuffle(rng, &mut buckets, self.config.par_number_of_subproblems(n));
+
+        profiler.new_region("ShuffleStashes");
         let num_unprocessed =
             sequential::shuffle_stashes(rng, &mut buckets, |r: &mut R, d: &mut [T]| {
                 self.shuffle(r, d)
             });
 
+        profiler.new_region("SampleFinalBucketSize");
         let target_lengths = sequential::sample_final_bucket_size(rng, num_unprocessed, &buckets);
+
+        profiler.new_region("TwoSweep");
         sequential::move_buckets_to_fit_target_len(&mut buckets, &target_lengths);
+
+        drop(profiler);
 
         if !self.config.par_disable_recursion() {
             self.recurse(rng, &mut buckets);
@@ -176,6 +189,8 @@ mod integration_test {
     implement_seq_config!(TestConfiguration, fisher_yates, 2);
 
     impl ParConfiguration for TestConfiguration {
+        implement_no_profiler!();
+
         fn par_base_case_shuffle<R: Rng, T: Sized>(&self, rng: &mut R, data: &mut [T]) {
             SeqScatterShuffleImpl::<R, T, _, NUM_BUCKETS>::new(*self).shuffle(rng, data)
         }

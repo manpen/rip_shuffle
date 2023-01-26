@@ -62,7 +62,7 @@ impl<'a, 'b, R: Rng, T, const LOG_N: usize, const N: usize, const SWAPS: usize>
                 stash.deconstruct(&mut *current_base);
             }
 
-            self.first_staged.synchronize_buckets(&mut self.buckets);
+            self.first_staged.synchronize_buckets(self.buckets);
         }
     }
 
