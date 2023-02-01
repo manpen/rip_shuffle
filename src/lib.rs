@@ -4,6 +4,7 @@
 #![feature(slice_split_at_unchecked)]
 
 pub mod fisher_yates;
+pub mod merge_shuffle;
 pub mod profiler;
 pub mod random_bits;
 pub mod rough_shuffle;
