@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 #![deny(warnings)]
 #![feature(bigint_helper_methods)]
 #![feature(core_intrinsics)]

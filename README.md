@@ -3,7 +3,7 @@
 This crate contains several efficient in-place shuffling algorithms to generate random permutations.
 Their design and performances is analyzed in detail in the paper "Engineering Shared-Memory Parallel Shuffling to Generate Random Permutations In-Place" [M. Penschuck].
 
-At time of writing, the default sequential implementation are 1.5 to 4 times faster than `rand::shuffling`.
+At time of writing, the default sequential implementation is 1.5 to 4 times faster than `rand::shuffling`.
 The parallel implementation can get several orders of magnitute faster.
 All implementations are in-place and do not use heap allocations (though, the parallel algorithms may set up a Rayon worker pool, if it's not already the case).
 
@@ -16,9 +16,9 @@ Include the following into your `Cargo.toml` file:
 rip_shuffle={version="0.1"}
 ```
 
-For general use cases, we export the two traits `RipShuffleSequential` and `RipShuffleParallel` which
+For general use cases, we export the two traits [`RipShuffleSequential`] and [`RipShuffleParallel`] which
 expose the functions `seq_shuffle` and `par_shuffle`, respectively. The sequential variant `seq_shuffle`
-can be used as a drop-in replacement for `rand::shufle`:
+can be used as a drop-in replacement for `rand::shuffle`:
 
 ```rust
 use rip_shuffle::RipShuffleSequential;
@@ -27,9 +27,9 @@ let mut data : Vec<_> = (0..100).into_iter().collect();
 data.seq_shuffle(&mut rand::thread_rng());
 ```
 
-The parallel variant imposes some constraints on the random number generator: it needs to be a `SeedableRng` and
-support `Send` and `Sync`. Most prominently, this is not the case for `ThreadRng`. However, you can seed a compatible
-instace (e.g., `StdRng` or `Pcg64`) from `ThreadRng` and then pass them:
+The parallel variant imposes some constraints on the random number generator: it needs to be a [`rand::SeedableRng`] and
+support [`std::marker::Send`] and [`std::marker::Sync`]. Most prominently, this is not the case for [`rand::rngs::ThreadRng`].
+However, you can seed a compatible instace (e.g., [`rand::rngs::StdRng`] or [`rand_pcg::Pcg64`]) from [`rand::rngs::ThreadRng`] and then pass them:
 
 ```rust
 use rip_shuffle::RipShuffleParallel;
@@ -56,8 +56,8 @@ data.par_shuffle_seed_with(&mut rand::thread_rng());
 This crate supports the following features, which are all enable by default:
 
 - `unsafe_algos` this feature enables algorithms that rely on pointer arithmetic, but are faster than their safe variants
-- `prefetch` enables explicit prefetching via `std::intrinsics::prefetch_write_data` to speed-up suffling
-- `seed_with` adds a dependency to `rand_pcg` and offers the `RipShuffleParallel::par_shuffle_seed_with` short-hand.
+- `prefetch` enables explicit prefetching via [`std::intrinsics::prefetch_write_data`] to speed-up suffling
+- `seed_with` adds a dependency to [`rand_pcg`] and offers the [`RipShuffleParallel::par_shuffle_seed_with`] short-hand.
 
 To disable these feature, you can adopt the `dependency` in your `Cargo.toml`, for instace:
 
