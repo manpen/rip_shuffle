@@ -1,9 +1,9 @@
 use rand::Rng;
 
-/// While [`impl_32::gen_index`] supports producing indices up to
-/// `u32::MAX`, in practice, the rejection rate rises significantly
+/// While `impl_32::gen_index` supports producing indices up to
+/// [`u32::MAX`], in practice, the rejection rate rises significantly
 /// for large upper bounds and it's then typically faster to use
-/// [`impl_64::gen_index`] in these regimes. This constant gives
+/// `impl_64::gen_index` in these regimes. This constant gives
 /// the recommended size when to switch.
 pub const U32_MAX_UPPER_BOUND: u32 = u32::MAX / 16;
 

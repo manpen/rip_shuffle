@@ -1,3 +1,4 @@
+#![deny(warnings)]
 #![feature(bigint_helper_methods)]
 #![feature(core_intrinsics)]
 #![feature(slice_swap_unchecked)]

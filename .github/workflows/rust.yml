@@ -1,0 +1,29 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Run all tests
+      run: cargo test
+
+    - name: Run tests with default features
+      run: cargo test --no-default-features
+
+    - name: Run tests in release
+      run: cargo test --release 
+
+    - name: Build documentation
+      run: cargo test --no-deps

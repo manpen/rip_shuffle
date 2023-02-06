@@ -36,8 +36,8 @@ pub trait RipShuffleParallel: Send + Sync {
     ///
     /// # Remarks
     /// This implementation requires a random number generator that is both seedable
-    /// (implements [`Rng::SeedableRng`]) and can be exchanged between threads
-    /// (implements [`std::markers::Send`] and [`std::markers::Sync`]).
+    /// (implements [`rand::SeedableRng`]) and can be exchanged between threads
+    /// (implements [`std::marker::Send`] and [`std::marker::Sync`]).
     ///
     /// Amongst others, this does not apply for [`rand::rngs::ThreadRng`]. If this
     /// is your default source of randomness, consider seeding a compatible RNG as

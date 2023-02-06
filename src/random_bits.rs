@@ -45,7 +45,7 @@ impl RandomBitsSource {
     /// `N` least significant positions of the returned value. The
     /// unused bits are cached and may speed up subsequent calls.
     ///
-    /// In contrast to [`RandomBitSource::gen_bits`] the number of bits
+    /// In contrast to [`RandomBitsSource::gen_bits`] the number of bits
     /// is known at compile time and may lead to more efficient code.
     /// Also, we avoid some costly shifts, which may waste a few
     /// random bits, but eventually pays off in our benchmarks.
