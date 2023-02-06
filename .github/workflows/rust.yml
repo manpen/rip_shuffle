@@ -17,13 +17,13 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Run all tests
-      run: cargo test
+      run: cargo +nightly test
 
     - name: Run tests with default features
-      run: cargo test --no-default-features
+      run: cargo +nightly test --no-default-features
 
     - name: Run tests in release
-      run: cargo test --release 
+      run: cargo +nightly test --release 
 
     - name: Build documentation
-      run: cargo test --no-deps
+      run: cargo +nightly test --no-deps
