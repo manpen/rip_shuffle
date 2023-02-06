@@ -44,7 +44,7 @@ data.par_shuffle(&mut rng);
 As a short-hand you can use `RipShuffleParallel::par_shuffle_seed_with`. This methods supports arbitrary `Rng`s
 to seed a `Pcg64Mcg` from them:
 
-```rust
+```ignore
 use rip_shuffle::RipShuffleParallel;
 let mut data : Vec<_> = (0..1_000_000).into_iter().collect();
 
