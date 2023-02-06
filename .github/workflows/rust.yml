@@ -15,15 +15,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@master
+
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: nightly
+        override: true
+
     - name: Run all tests
-      run: cargo +nightly test
+      run: cargo test
 
     - name: Run tests with default features
-      run: cargo +nightly test --no-default-features
+      run: cargo test --no-default-features
 
     - name: Run tests in release
-      run: cargo +nightly test --release 
+      run: cargo test --release 
 
     - name: Build documentation
-      run: cargo +nightly test --no-deps
+      run: cargo test --no-deps
