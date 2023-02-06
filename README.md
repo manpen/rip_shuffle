@@ -62,5 +62,5 @@ This crate supports the following features, which are all enable by default:
 To disable these feature, you can adopt the `dependency` in your `Cargo.toml`, for instace:
 
 ```toml
-rip_shuffle={version="0.1", default-features = true, features = ["seed_with"]}
+rip_shuffle={version="0.1", default-features = false, features = ["seed_with"]}
 ```
