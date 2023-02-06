@@ -12,13 +12,14 @@ pub mod avail {
     }
 }
 
+#[cfg(feature = "prefetch")]
 pub use avail::*;
 
 #[cfg(not(feature = "prefetch"))]
 mod mock {
     pub const SUPPORTED: bool = false;
 
-    pub fn prefetch_write_data<T>(item: &mut T) {}
+    pub fn prefetch_write_data<T>(_item: &mut T) {}
 }
 
 #[cfg(not(feature = "prefetch"))]

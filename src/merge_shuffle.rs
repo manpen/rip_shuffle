@@ -52,7 +52,7 @@ fn random_merge<R: Rng, T>(rng: &mut R, left: &mut [T], right: &mut [T]) {
         }
 
         #[cfg(not(feature = "unsafe_algos"))]
-        safe_random_merge(rng, left, right)
+        safe_rough_random_merge(rng, left, right)
     };
 
     insertion_shuffle(rng, left.merge_with_right_neighbor(right), num_rough_merged);
