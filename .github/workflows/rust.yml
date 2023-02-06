@@ -33,4 +33,4 @@ jobs:
       run: cargo test --release 
 
     - name: Build documentation
-      run: cargo test --no-deps
+      run: cargo doc --no-deps
