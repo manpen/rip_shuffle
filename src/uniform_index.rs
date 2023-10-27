@@ -47,7 +47,7 @@ macro_rules! impl_gen_index {
         pub fn gen_index_impl(rng: &mut impl Rng, initial: $t, exclusive_ub: $t) -> $t {
             debug_assert!(exclusive_ub != 0);
 
-            let (mut lo, mut hi) = initial.widening_mul(exclusive_ub);
+            let (mut lo, mut hi) = initial.wide_multiply(exclusive_ub);
 
             if lo >= exclusive_ub {
                 return hi;
@@ -61,7 +61,7 @@ macro_rules! impl_gen_index {
                 }
 
                 let rand: $t = rng.gen();
-                (lo, hi) = rand.widening_mul(exclusive_ub);
+                (lo, hi) = rand.wide_multiply(exclusive_ub);
             }
         }
     };
@@ -81,8 +81,8 @@ pub mod impl_u32 {
         let r0 = rand as u32;
         let r1 = (rand >> 32) as u32;
 
-        let (lo0, hi0) = r0.widening_mul(exclusive_ub.0);
-        let (lo1, hi1) = r1.widening_mul(exclusive_ub.1);
+        let (lo0, hi0) = r0.wide_multiply(exclusive_ub.0);
+        let (lo1, hi1) = r1.wide_multiply(exclusive_ub.1);
 
         if (lo0 < exclusive_ub.0) | (lo1 < exclusive_ub.1) {
             (
@@ -98,6 +98,31 @@ pub mod impl_u32 {
 pub mod impl_u64 {
     impl_gen_index!(u64);
 }
+
+trait WideMul: Sized {
+    /// A re-implementation of the unstable `widening_mul` method
+    fn wide_multiply(self, b: Self) -> (Self, Self);
+}
+
+macro_rules! impl_wide_mul {
+    ( $small : ty , $large : ty ) => {
+        impl WideMul for $small {
+            fn wide_multiply(self, b: Self) -> (Self, Self) {
+                let a = self as $large;
+                let b = b as $large;
+
+                let res = a.wrapping_mul(b);
+
+                ((res as Self), (res >> Self::BITS) as Self)
+            }
+        }
+    };
+}
+
+impl_wide_mul!(u8, u16);
+impl_wide_mul!(u16, u32);
+impl_wide_mul!(u32, u64);
+impl_wide_mul!(u64, u128);
 
 #[cfg(test)]
 mod test {

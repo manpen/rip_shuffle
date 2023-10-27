@@ -1,6 +1,4 @@
 #![doc = include_str!("../README.md")]
-#![deny(warnings)]
-#![feature(bigint_helper_methods)]
 #![feature(core_intrinsics)]
 #![feature(slice_swap_unchecked)]
 #![feature(slice_split_at_unchecked)]
