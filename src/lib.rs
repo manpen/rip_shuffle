@@ -1,7 +1,5 @@
 #![doc = include_str!("../README.md")]
 #![feature(core_intrinsics)]
-#![feature(slice_swap_unchecked)]
-#![feature(slice_split_at_unchecked)]
 
 pub mod api;
 pub mod fisher_yates;
