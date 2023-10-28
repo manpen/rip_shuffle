@@ -13,7 +13,7 @@ Include the following into your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-rip_shuffle={version="0.1"}
+rip_shuffle={version="0.2"}
 ```
 
 For general use cases, we export the two traits [`RipShuffleSequential`] and [`RipShuffleParallel`] which
@@ -70,5 +70,5 @@ This crate supports the following features:
 To disable these feature, you can adopt the `dependency` in your `Cargo.toml`, for instace:
 
 ```toml
-rip_shuffle={version="0.1", default-features = false, features = ["seed_with"]}
+rip_shuffle={version="0.2", default-features = false, features = ["seed_with"]}
 ```
