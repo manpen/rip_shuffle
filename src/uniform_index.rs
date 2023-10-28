@@ -128,6 +128,21 @@ impl_wide_mul!(u64, u128);
 mod test {
     use super::*;
 
+    #[test]
+    fn wide_multiply32() {
+        use rand::SeedableRng;
+        let mut urng = rand_pcg::Pcg64Mcg::seed_from_u64(1234);
+
+        for _ in 0..1000 {
+            let a : u32 = urng.gen();
+            let b : u32 = urng.gen();
+
+            let (lo, hi) = a.wide_multiply(b);
+
+            assert_eq!((lo as u64) | ((hi as u64) << 32),  (a as u64) * (b as u64));
+        }
+    }
+
     macro_rules! impl_tests {
         ($n : expr, $t : ty) => {
             use super::*;
