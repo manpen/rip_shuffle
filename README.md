@@ -56,14 +56,14 @@ data.par_shuffle_seed_with(&mut rand::thread_rng());
 This crate has two default feature sets which should be appropriate for most cases and do not change the API.
 
 - `default` is supposed to work with all recent rust compilers
-- `unstable_default` requires nightly features but may yield slightly faster binaries.
+- `nightly_default` requires nightly features but may yield slightly faster binaries.
   If you are using a non-stable compiler consider enabling this feature.
 
 This crate supports the following features:
 
 - `unsafe_algos` (enabled by `default`) this feature enables algorithms that rely on pointer arithmetic, but are faster than their safe variants
 - `seed_with` (enabled by `default`) adds a dependency to [`rand_pcg`] and offers the [`RipShuffleParallel::par_shuffle_seed_with`] short-hand.
-- `prefetch` (enabled by `unstable_default`) enables explicit prefetching via [`std::intrinsics::prefetch_write_data`] to speed-up shuffling.
+- `prefetch` (enabled by `nightly_default`) enables explicit prefetching via [`std::intrinsics::prefetch_write_data`] to speed-up shuffling.
   This feature does require a **nightly-channel** compiler.
 
 
