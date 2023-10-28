@@ -11,7 +11,8 @@ exclude = [".gitignore", ".gitlab-ci.yml",  ".github/", "target"]
 homepage = "https://github.com/manpen/rip_shuffle"
 
 [features]
-default = ["unsafe_algos", "prefetch", "seed_with"]
+default = ["unsafe_algos", "seed_with"]
+unstable_default = ["default", "prefetch"]
 unsafe_algos = []
 prefetch = []
 seed_with = ["rand_pcg"]
