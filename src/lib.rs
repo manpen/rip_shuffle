@@ -1,5 +1,5 @@
 #![doc = include_str!("../README.md")]
-#![feature(core_intrinsics)]
+#![cfg_attr(feature = "prefetch", feature(core_intrinsics))]
 
 pub mod api;
 pub mod fisher_yates;
