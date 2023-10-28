@@ -28,13 +28,13 @@ jobs:
       run: cargo test --no-default-features
 
     - name: Run with all unstable features
-      run: cargo test --feature="unstable_defaults"
+      run: cargo test --features="unstable_defaults"
 
     - name: Run tests in release
-      run: cargo test --feature="unstable_defaults" --release 
+      run: cargo test --features="unstable_defaults" --release 
 
     - name: Build documentation
-      run: cargo doc --feature="unstable_defaults" --no-deps
+      run: cargo doc --features="unstable_defaults" --no-deps
 
 
   build_stable:
