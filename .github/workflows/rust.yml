@@ -10,10 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  build_nightly:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@master
 
@@ -23,11 +21,38 @@ jobs:
         toolchain: nightly
         override: true
 
-    - name: Run all tests
+    - name: Run all tests with stable defaults
       run: cargo test
 
-    - name: Run tests with default features
+    - name: Run tests without default features
       run: cargo test --no-default-features
+
+    - name: Run with all unstable features
+      run: cargo test --features="nightly_default"
+
+    - name: Run tests in release
+      run: cargo test --features="nightly_default" --release 
+
+    - name: Build documentation
+      run: cargo doc --features="nightly_default" --no-deps
+
+
+  build_stable:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Run tests without default features
+      run: cargo test --no-default-features
+
+    - name: Run with all stable features
+      run: cargo test
 
     - name: Run tests in release
       run: cargo test --release 

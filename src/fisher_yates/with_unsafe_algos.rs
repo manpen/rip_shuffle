@@ -66,14 +66,16 @@ pub fn fisher_yates_impl<R: Rng, T, const PREFETCH_WIDTH: usize>(rng: &mut R, da
             i - PREFETCH_WIDTH + 1,
         ));
         unsafe {
-            data.swap_unchecked(i, j);
+            let ptr = data.as_mut_ptr();
+            std::ptr::swap(ptr.add(i), ptr.add(j));
         }
     }
 
     for i in (1..PREFETCH_WIDTH + 1).rev() {
         let j = enqueue(0);
         unsafe {
-            data.swap_unchecked(i, j);
+            let ptr = data.as_mut_ptr();
+            std::ptr::swap(ptr.add(i), ptr.add(j));
         }
     }
 }

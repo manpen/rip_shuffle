@@ -13,7 +13,7 @@ Include the following into your `Cargo.toml` file:
 
 ```toml
 [dependencies]
-rip_shuffle={version="0.1"}
+rip_shuffle={version="0.2"}
 ```
 
 For general use cases, we export the two traits [`RipShuffleSequential`] and [`RipShuffleParallel`] which
@@ -44,7 +44,7 @@ data.par_shuffle(&mut rng);
 As a short-hand you can use `RipShuffleParallel::par_shuffle_seed_with`. This methods supports arbitrary `Rng`s
 to seed a `Pcg64Mcg` from them:
 
-```ignore
+```rust ignore
 use rip_shuffle::RipShuffleParallel;
 let mut data : Vec<_> = (0..1_000_000).into_iter().collect();
 
@@ -53,14 +53,22 @@ data.par_shuffle_seed_with(&mut rand::thread_rng());
 
 ## Features
 
-This crate supports the following features, which are all enable by default:
+This crate has two default feature sets which should be appropriate for most cases and do not change the API.
 
-- `unsafe_algos` this feature enables algorithms that rely on pointer arithmetic, but are faster than their safe variants
-- `prefetch` enables explicit prefetching via [`std::intrinsics::prefetch_write_data`] to speed-up suffling
-- `seed_with` adds a dependency to [`rand_pcg`] and offers the [`RipShuffleParallel::par_shuffle_seed_with`] short-hand.
+- `default` is supposed to work with all recent rust compilers
+- `nightly_default` requires nightly features but may yield slightly faster binaries.
+  If you are using a non-stable compiler consider enabling this feature.
+
+This crate supports the following features:
+
+- `unsafe_algos` (enabled by `default`) this feature enables algorithms that rely on pointer arithmetic, but are faster than their safe variants
+- `seed_with` (enabled by `default`) adds a dependency to [`rand_pcg`] and offers the [`RipShuffleParallel::par_shuffle_seed_with`] short-hand.
+- `prefetch` (enabled by `nightly_default`) enables explicit prefetching via [`std::intrinsics::prefetch_write_data`] to speed-up shuffling.
+  This feature does require a **nightly-channel** compiler.
+
 
 To disable these feature, you can adopt the `dependency` in your `Cargo.toml`, for instace:
 
 ```toml
-rip_shuffle={version="0.1", default-features = false, features = ["seed_with"]}
+rip_shuffle={version="0.2", default-features = false, features = ["seed_with"]}
 ```
